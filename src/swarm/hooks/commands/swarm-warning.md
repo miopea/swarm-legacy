@@ -15,6 +15,6 @@ Args: $ARGUMENTS
 
 2. Parse: first token = `<to-worker>`; remainder = `<warning>`.
 
-3. Call `mcp__swarm__swarm_send_message` with `to=<to-worker>`, `msg_type="warning"`, `content=<warning>`.
+3. Call `mcp__swarm__swarm_send_message` with `to=<to-worker>`, `type="warning"`, `content=<warning>`.
 
 4. Report a one-line confirmation.
