@@ -6,6 +6,27 @@ Swarm (legacy) uses calendar versioning (`YYYY.M.D.patch`) — see `pyproject.to
 
 ### Features
 
+### Changes
+
+### Fixes
+
+## [2026.8.28] - 2026-08-28
+
+### Features
+
+- **A sunset notice in the dashboard.** Swarm (legacy) now says so on the page
+  the remaining operators actually have open, rather than only in a README they
+  followed once. A banner above everything else states that this version is no
+  longer maintained and that the hive keeps running regardless; "What's next"
+  opens the detail: what Swarm Next is, the one-line install, and what its
+  migration does and does not carry across. It is candid about the second half
+  — workers, repositories, exact provider conversations and open tasks come
+  over; skills, groups, approval rules, identity files and playbooks do not —
+  because a handover notice that oversells the replacement costs an operator
+  real work. Dismissal is session-scoped: every other banner describes a
+  condition you can clear, this one describes a permanent fact, so it returns
+  next visit rather than disappearing on one click.
+
 - **`swarm-legacy uninstall`.** There was no uninstall command, and
   `SwarmCLI` routes an unrecognised word to `start` as a target — so typing
   it *started a daemon*, which then failed against the daemon already
@@ -28,6 +49,14 @@ Swarm (legacy) uses calendar versioning (`YYYY.M.D.patch`) — see `pyproject.to
   as they were.
 
 ### Fixes
+
+- **The uninstall report went quiet about work it had done.** The plan promised
+  to stop the daemon; `systemctl stop` had already taken it by the time the
+  process sweep ran, so the result never mentioned it again — which reads as a
+  step that failed. It now says the process stopped with the unit, while still
+  never claiming a kill it did not make. Alongside it, the last-step hint named
+  only `swarm` when `uv tool uninstall swarm-ai` removes both entrypoints,
+  including the `swarm-legacy` just typed.
 
 - **A fresh install re-occupied the `swarm` name it had been retired from.**
   `state_dir()` fell back to `~/.swarm` whenever neither directory existed,
@@ -64,6 +93,17 @@ Swarm (legacy) uses calendar versioning (`YYYY.M.D.patch`) — see `pyproject.to
   will live, they were told the wrong place. The `--db` and `--socket`
   defaults, the backups message and the permissions hint had the same stale
   path baked in.
+
+- **The test suite could stop and delete the operator's live systemd unit.**
+  `_isolate_systemd_unit` is a monkeypatch fixture, and `monkeypatch.undo()`
+  reverts every patch in scope rather than just the caller's — so a test that
+  called it to reach past its own stub also stepped out of the isolation and
+  ran a real `uninstall` against the machine, stopping `swarm-legacy.service`
+  and removing its unit file. The database survived only because uninstall
+  keeps state without `--purge`. An isolation built from monkeypatch cannot
+  defend against a test that steps around monkeypatch, so systemctl and the
+  unit path are now rebound at conftest module scope, where `undo()` has no
+  record of them to revert.
 
 - **A test guard and its control disagreed about which log to watch.**
   `conftest` resolves the production log through `state_dir()` now, but

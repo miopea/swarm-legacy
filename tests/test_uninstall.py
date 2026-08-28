@@ -41,7 +41,9 @@ def install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("swarm.service.current_unit_path", lambda: unit)
     monkeypatch.setattr("swarm.service._systemctl", lambda *a: None)
     monkeypatch.setattr(un, "_unit_is_active", lambda _n: True)
-    monkeypatch.setattr(un, "_entrypoint_candidates", list)
+    # Stub the directory scan, not the function under test, so a test that
+    # cares about entrypoint reporting can supply its own bin directory.
+    monkeypatch.setattr(un, "_shim_directories", list)
     monkeypatch.setattr(un, "find_live_processes", lambda _s: [])
     return {"state": state, "unit": unit}
 
@@ -161,3 +163,57 @@ class TestForeignUnit:
         result = runner.invoke(main, ["uninstall"], input="n\n")
 
         assert "LEAVE" in result.output
+
+
+class TestTheReportMatchesThePlan:
+    """Everything the plan promised must be accounted for in the result.
+
+    Seen in the first real run: the plan said it would stop the daemon
+    (PID 3359646) and the results never mentioned it again. Nothing was
+    wrong — `systemctl stop` had already taken it, and `perform` re-reads
+    the live list rather than claim a kill it did not make — but "we will
+    stop X" followed by silence about X reads as a step that failed.
+    """
+
+    def test_a_process_the_unit_took_down_is_still_reported(self, install, monkeypatch) -> None:
+        daemon = LiveProcess("daemon", 4242, "holds swarm.db and the listen port")
+        monkeypatch.setattr(un, "find_live_processes", lambda _s: [daemon])
+        plan = un.plan()
+        # Removing the unit stops the daemon, so by step 2 it is gone.
+        monkeypatch.setattr(un, "find_live_processes", lambda _s: [])
+
+        steps = un.perform(plan)
+
+        assert any("daemon" in s and "4242" in s for s in steps), (
+            "the plan promised to stop the daemon and the result never mentioned it"
+        )
+
+    def test_it_does_not_invent_a_kill_it_did_not_make(self, install, monkeypatch) -> None:
+        daemon = LiveProcess("daemon", 4242, "holds swarm.db")
+        monkeypatch.setattr(un, "find_live_processes", lambda _s: [daemon])
+        plan = un.plan()
+        monkeypatch.setattr(un, "find_live_processes", lambda _s: [])
+
+        steps = un.perform(plan)
+
+        assert not any("Stopped daemon" in s for s in steps)
+
+
+class TestItNamesEveryEntrypoint:
+    """`uv tool uninstall swarm-ai` removes both shims, so say both.
+
+    The first real run printed "(that is what removes swarm)" while the
+    command it was describing removed `swarm` AND `swarm-legacy` — including
+    the one the operator had just typed.
+    """
+
+    def test_both_shims_are_reported(self, install, monkeypatch, tmp_path, runner) -> None:
+        bindir = tmp_path / "bin"
+        bindir.mkdir()
+        (bindir / "swarm").write_text("#!/bin/sh\n")
+        (bindir / "swarm-legacy").write_text("#!/bin/sh\n")
+        monkeypatch.setattr(un, "_shim_directories", lambda: [bindir])
+
+        result = runner.invoke(main, ["uninstall", "--yes"])
+
+        assert "swarm, swarm-legacy" in result.output

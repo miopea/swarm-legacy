@@ -3,6 +3,15 @@
 
 {% block body %}
 <a href="#main-content" class="skip-link">Skip to main content</a>
+<!-- Sunset notice. First banner in the stack on purpose: it is the only one
+     that is true on every load forever, so it must not sit below a transient
+     one and get read as another passing warning. -->
+<div id="sunset-banner" style="display:none; background:color-mix(in srgb, var(--lavender) 14%, var(--surface)); border-bottom:2px solid var(--lavender); padding:10px 16px; font-size:13px; color:var(--text); text-align:center;">
+    <strong style="color:var(--lavender);">Swarm (legacy) is no longer maintained.</strong>
+    Swarm Next has replaced it. This hive keeps running &mdash; nothing here stops working.
+    <button data-action="showSunsetNotice" style="margin-left:8px; padding:4px 12px; background:var(--lavender); color:var(--canvas); border:none; border-radius:4px; cursor:pointer; font-size:12px; font-weight:600;">What&rsquo;s next</button>
+    <button data-action="dismissSunsetBanner" style="margin-left:4px; padding:2px 10px; background:transparent; color:var(--muted); border:1px solid var(--muted); border-radius:4px; cursor:pointer; font-size:12px;">Dismiss</button>
+</div>
 <div id="test-mode-banner" style="display:none; background:#f59e0b; color:#000; text-align:center; padding:6px 12px; font-weight:bold; font-size:14px;">
     TEST MODE — Supervised orchestration testing active
     <span id="test-report-link" style="display:none; margin-left:12px;"></span>
@@ -1292,6 +1301,75 @@
             </span>
         </div>
         <div id="shell-container" class="terminal-content"></div>
+    </div>
+</div>
+<!-- Sunset notice detail. Everything here is checkable against Swarm Next's
+     own docs; nothing claims a capability Next does not have. In particular
+     it does NOT claim skills, groups, approval rules or identity files
+     migrate, because they do not — the bundle carries workers and tasks. -->
+<div id="sunset-modal" class="modal-overlay" style="display:none" data-modal-dismiss="hideSunsetNotice">
+    <div class="modal-box modal-lg" role="dialog" aria-modal="true" aria-labelledby="sunset-modal-title">
+        <div class="panel-header">
+            <span id="sunset-modal-title">Swarm (legacy) has been superseded</span>
+            <button class="btn btn-sm btn-secondary" data-action="hideSunsetNotice">Close</button>
+        </div>
+        <div class="modal-padding modal-body-scroll sunset-body">
+            <p><strong>This hive still works.</strong> Nothing has been switched off and
+            nothing is being deleted. What has stopped is the development: this version
+            gets no new features, and fixes only if something here breaks badly.</p>
+
+            <h4>What replaced it</h4>
+            <p><a href="https://github.com/miopea/swarm-next" target="_blank" rel="noopener">Swarm Next</a>
+            is a ground-up rebuild of the same idea &mdash; a Queen, a roster of workers,
+            durable tasks, Jira and email intake, terminals that stay alive. It runs as
+            your own systemd user services on one machine and listens only on localhost.
+            The differences you would notice first: agent sessions survive browser
+            reloads and app updates, everything needing you arrives in one
+            <em>Needs&nbsp;you</em> queue instead of waiting in a terminal nobody is
+            watching, and it tells you when it cannot confirm something rather than
+            claiming it worked.</p>
+
+            <h4>Installing it</h4>
+            <p>One command, which always takes the current release:</p>
+            <pre class="sunset-cmd"><code>curl -fsSL https://raw.githubusercontent.com/miopea/swarm-next/main/install.sh | sh</code></pre>
+            <p class="sunset-note">Legacy and Next are separate processes with separate
+            databases, so they run side by side. Installing Next changes nothing here.</p>
+
+            <h4>Bringing your work across</h4>
+            <p>Next has a migration under <strong>Settings &rarr; Migration</strong> that
+            previews everything before it changes anything, and can be undone while an
+            import is still untouched. It reads this hive&rsquo;s database directly.</p>
+            <ul>
+                <li><strong>Workers and their repositories</strong> &mdash; name, repository
+                path, provider and description come across. They arrive asleep; no agent
+                starts until you wake it.</li>
+                <li><strong>Conversations</strong> &mdash; each worker can resume the
+                <em>exact</em> Claude or Codex conversation it was having for its
+                repository, on first wake. Anything living inside the repository, such as
+                <code>.claude/</code> skills and commands, travels with the repository
+                path.</li>
+                <li><strong>Open tasks</strong> &mdash; imported as drafts on Next&rsquo;s
+                board. Jira-sourced work returns through Jira sync instead, and closed
+                tasks stay here as history.</li>
+            </ul>
+            <p><strong>What does not come across:</strong> identity files, groups,
+            approval rules, skills stored in this database, playbooks and pipelines.
+            Some are deliberate removals rather than gaps &mdash; worker-to-worker
+            messaging is gone on purpose, for instance. The
+            <a href="https://github.com/miopea/swarm-next/blob/main/docs/moving-from-legacy.md" target="_blank" rel="noopener">migration
+            guide</a> is candid about which is which.</p>
+
+            <h4>If you would rather stop here</h4>
+            <p>Run <code>swarm-legacy uninstall</code>. It removes the service, stops the
+            hive, and keeps your database unless you pass <code>--purge</code>.</p>
+
+            <p class="sunset-links">
+                <a href="https://github.com/miopea/swarm-next" target="_blank" rel="noopener">Repository</a> ·
+                <a href="https://github.com/miopea/swarm-next/blob/main/docs/install.md" target="_blank" rel="noopener">Install guide</a> ·
+                <a href="https://github.com/miopea/swarm-next/blob/main/docs/moving-from-legacy.md" target="_blank" rel="noopener">Moving from Legacy</a> ·
+                <a href="https://github.com/miopea/swarm-next/blob/main/docs/using-swarm.md" target="_blank" rel="noopener">Using Swarm</a>
+            </p>
+        </div>
     </div>
 </div>
 <div id="ctx-menu" class="ctx-menu" style="display:none"></div>

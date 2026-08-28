@@ -40,8 +40,8 @@ from swarm.logging import get_logger
 from swarm.paths import state_dir
 from swarm.relocate import (
     LiveProcess,
-    _entrypoint_candidates,
     _pid_alive,
+    _shim_directories,
     _unit_is_active,
     dir_size_bytes,
     find_live_processes,
@@ -56,6 +56,24 @@ PACKAGE = "swarm-ai"
 has been ``swarm-ai`` on PyPI throughout, and the renames only ever moved
 the console scripts.  Printed rather than guessed at.
 """
+
+
+def _installed_entrypoints() -> list[Path]:
+    """Every console script ``uv tool uninstall swarm-ai`` will remove.
+
+    ``relocate._entrypoint_candidates`` looks for ``swarm`` alone, which is
+    right for relocating — that command exists to free exactly that name. It
+    is wrong here: uninstalling removes BOTH scripts, including the
+    ``swarm-legacy`` the operator just typed. The first real run reported
+    "that is what removes swarm" while removing two.
+    """
+    found: list[Path] = []
+    for directory in _shim_directories():
+        for name in ("swarm", "swarm-legacy"):
+            candidate = directory / name
+            if (candidate.exists() or candidate.is_symlink()) and candidate not in found:
+                found.append(candidate)
+    return found
 
 
 @dataclass
@@ -96,7 +114,7 @@ def plan() -> UninstallPlan:
         state=state,
         state_bytes=dir_size_bytes(state),
         live=find_live_processes(state),
-        entrypoints=_entrypoint_candidates(),
+        entrypoints=_installed_entrypoints(),
     )
 
 
@@ -150,8 +168,18 @@ def perform(plan_: UninstallPlan, *, purge: bool = False) -> list[str]:
     #    plan's list is re-read: stopping the unit may already have taken
     #    the daemon down, and reporting a kill that did not happen is worse
     #    than saying nothing.
-    for proc in find_live_processes(plan_.state):
+    #
+    #    But silence is not the alternative.  The plan told the operator this
+    #    process would be stopped; if it is gone, say that it is gone.  The
+    #    first real run promised to stop the daemon and then never mentioned
+    #    it again, which reads as a step that quietly failed.
+    still_running = find_live_processes(plan_.state)
+    running_pids = {proc.pid for proc in still_running}
+    for proc in still_running:
         steps.append(_terminate(proc))
+    for proc in plan_.live:
+        if proc.pid not in running_pids:
+            steps.append(f"{proc.kind} (PID {proc.pid}) stopped with the unit")
 
     # 3. State, only on request.
     if purge:

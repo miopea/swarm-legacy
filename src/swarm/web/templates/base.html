@@ -871,6 +871,42 @@
         .btn-notif { font-size: 0.9rem; padding: 0.4rem 0.6rem; }
         /* --- Tab groups --- */
         .tab-group { display: flex; gap: 0; }
+        /* --- Sunset notice (Swarm Next handover) ---
+           Prose, not dashboard chrome: this is the one panel someone READS
+           rather than scans, so it gets a measure and line-height the dense
+           panels deliberately do not have. */
+        .sunset-body { font-size: 0.85rem; line-height: 1.6; color: var(--text); }
+        .sunset-body p { margin: 0 0 0.75rem; }
+        .sunset-body h4 {
+            margin: 1.1rem 0 0.4rem;
+            font-size: 0.9rem;
+            color: var(--lavender);
+        }
+        .sunset-body ul { margin: 0 0 0.75rem; padding-left: 1.2rem; }
+        .sunset-body li { margin-bottom: 0.4rem; }
+        .sunset-body a { color: var(--honey); }
+        .sunset-body code {
+            background: var(--canvas);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 1px 4px;
+            font-size: 0.8em;
+        }
+        /* The install command is meant to be selected and copied, so it must
+           not wrap mid-URL — it scrolls instead. */
+        .sunset-cmd {
+            background: var(--canvas);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 0.6rem 0.7rem;
+            margin: 0 0 0.75rem;
+            overflow-x: auto;
+            font-size: 0.78rem;
+        }
+        .sunset-cmd code { background: none; border: none; padding: 0; white-space: pre; }
+        .sunset-note { color: var(--muted); font-size: 0.8rem; }
+        .sunset-links { margin-top: 1rem; font-size: 0.8rem; }
+
         /* --- Proposal banner --- */
         .proposal-banner {
             background: rgba(168,143,217,0.1); border: 1px solid var(--lavender);

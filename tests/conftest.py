@@ -76,6 +76,36 @@ def _external_daemon_running(lock_path: Path = _DAEMON_LOCK_PATH) -> bool:
 _EXTERNAL_DAEMON_AT_START = _external_daemon_running()
 _swarm_db_core._DEFAULT_DB_PATH = _TEST_DB_DIR / "session-default.db"
 
+# --- systemd, at module scope, because monkeypatch is not enough -------------
+#
+# ``_isolate_systemd_unit`` below already redirects the unit path and stubs
+# systemctl. It is a monkeypatch fixture, and ``monkeypatch.undo()`` reverts
+# EVERY patch in scope — not just the caller's own. A test that called undo()
+# to reach past its own fixture therefore also stepped out of the isolation,
+# ran the real ``swarm-legacy uninstall``, and stopped and deleted the
+# operator's live ``swarm-legacy.service`` on 2026-08-28. The database
+# survived only because uninstall keeps state without ``--purge``.
+#
+# These assignments are plain module-level rebinds, so undo() cannot reach
+# them: a test that escapes its fixtures lands here instead of on systemd. A
+# per-test monkeypatch can still layer over them for assertions.
+import swarm.relocate as _swarm_relocate  # noqa: E402
+import swarm.service as _swarm_service  # noqa: E402
+
+
+def _refuse_systemctl(*args: str) -> subprocess.CompletedProcess[str]:
+    """Never reach the real systemd from a test, whatever undid what."""
+    return subprocess.CompletedProcess(list(args), 0, stdout="", stderr="")
+
+
+_swarm_service._systemctl = _refuse_systemctl
+_swarm_relocate._systemctl = _refuse_systemctl
+# Unit writes and unlinks land in the throwaway session directory, not in
+# ~/.config/systemd/user, for the same reason.
+_swarm_service._SERVICE_DIR = _TEST_DB_DIR / "systemd-user"
+_swarm_service._SERVICE_DIR.mkdir(parents=True, exist_ok=True)
+_swarm_service._SERVICE_PATH = _swarm_service._SERVICE_DIR / "swarm.service"
+
 from swarm.worker.worker import Worker, WorkerState  # noqa: E402
 from tests.fakes.process import FakeWorkerProcess  # noqa: E402
 

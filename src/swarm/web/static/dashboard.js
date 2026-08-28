@@ -267,6 +267,9 @@
         bounceHolder: function() { bounceHolder(); },
         relocateHive: function() { relocateHive(); },
         hideRelocateBanner: function() { hideRelocateBanner(); },
+        showSunsetNotice: function() { showSunsetNotice(); },
+        hideSunsetNotice: function() { hideSunsetNotice(); },
+        dismissSunsetBanner: function() { dismissSunsetBanner(); },
     };
 
     // Click delegation for [data-action]
@@ -9164,6 +9167,54 @@
         }
         return '';
     }
+
+    // --- Sunset notice -------------------------------------------------
+    //
+    // Shown on every load, dismissible only for the session. The other
+    // banners describe a condition you can fix, so dismissing one for good
+    // is reasonable; this one describes a permanent fact about the
+    // software, and a permanent dismissal would mean an operator who
+    // clicked once in August never sees it again. sessionStorage, not
+    // localStorage, is the whole distinction.
+    var _SUNSET_KEY = 'swarm_sunset_dismissed';
+
+    function _sunsetDismissed() {
+        try {
+            return sessionStorage.getItem(_SUNSET_KEY) === '1';
+        } catch (e) {
+            // Private mode / storage disabled. Showing the banner is the
+            // safe failure: the notice is the point of this release.
+            return false;
+        }
+    }
+
+    function initSunsetBanner() {
+        var banner = document.getElementById('sunset-banner');
+        if (!banner) return;
+        banner.style.display = _sunsetDismissed() ? 'none' : 'block';
+    }
+
+    function dismissSunsetBanner() {
+        var banner = document.getElementById('sunset-banner');
+        if (banner) banner.style.display = 'none';
+        try {
+            sessionStorage.setItem(_SUNSET_KEY, '1');
+        } catch (e) {
+            // Nothing to do: it stays hidden for this page view either way.
+        }
+    }
+
+    function showSunsetNotice() {
+        var modal = document.getElementById('sunset-modal');
+        if (modal) modal.style.display = 'flex';
+    }
+
+    function hideSunsetNotice() {
+        var modal = document.getElementById('sunset-modal');
+        if (modal) modal.style.display = 'none';
+    }
+
+    initSunsetBanner();
 
     function updateRelocateBanner(health) {
         var banner = document.getElementById('relocate-banner');
