@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -158,7 +159,12 @@ class TestUninstallService:
         service_dir = tmp_path / "systemd" / "user"
         service_dir.mkdir(parents=True)
         service_path = service_dir / "swarm.service"
-        service_path.write_text("[Unit]\nDescription=Test\n")
+        # A unit that is recognisably ours — uninstall now refuses to touch
+        # one that is not.  See TestUninstallRefusesAForeignUnit.
+        service_path.write_text(
+            "[Unit]\nDescription=Swarm (legacy) Web Dashboard\n"
+            "[Service]\nExecStart=/home/u/.local/bin/swarm serve\n"
+        )
 
         with (
             patch("swarm.service._SERVICE_PATH", service_path),
@@ -695,3 +701,125 @@ class TestUninstallLaunchd:
             result = uninstall_launchd()
 
         assert result is False
+
+
+class TestUnitNameFollowsTheInstall:
+    """Every unit operation must name the unit this install actually uses.
+
+    ``uninstall_service`` and ``service_status`` hardcoded ``swarm.service``
+    while ``install_service`` resolved the name properly.  On a relocated
+    install — which, now that a fresh install lands in ``~/.swarm-legacy``,
+    means every new one — the uninstall stopped a unit that does not exist,
+    reported "nothing to remove", and left ``swarm-legacy.service`` running.
+    systemd then restarted the daemon the operator had just stopped, which is
+    what "the uninstall fails and it starts itself back up again" looks like
+    from the outside.
+
+    ``current_unit_name`` resolving correctly is covered by
+    ``TestUnit.test_unit_name_follows_the_relocated_state_dir`` in
+    ``test_relocate.py``; what is asserted here is that these two functions
+    consult it at all.
+    """
+
+    @pytest.fixture
+    def relocated(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        """Report this install as relocated, unit directory under tmp_path."""
+        from swarm import service as svc
+
+        unit_dir = tmp_path / "systemd-user"
+        unit_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(svc, "_SERVICE_PATH", unit_dir / "swarm.service")
+        # Overrides conftest's autouse pin, which reports every test box as
+        # un-relocated so unit naming does not vary with the developer's home.
+        monkeypatch.setattr(svc, "current_unit_name", lambda: "swarm-legacy.service")
+        return unit_dir
+
+    def test_uninstall_removes_the_relocated_unit(self, relocated: Path) -> None:
+        unit = relocated / "swarm-legacy.service"
+        unit.write_text("[Unit]\nDescription=Swarm (legacy) Web Dashboard\n")
+
+        with patch("swarm.service._systemctl") as mock_ctl:
+            result = uninstall_service()
+
+        assert result is True
+        assert not unit.exists()
+        calls = [c.args for c in mock_ctl.call_args_list]
+        assert ("stop", "swarm-legacy.service") in calls
+        assert ("disable", "swarm-legacy.service") in calls
+        assert ("daemon-reload",) in calls
+
+    def test_uninstall_leaves_a_foreign_swarm_service_alone(self, relocated: Path) -> None:
+        """``swarm.service`` is not ours once relocated — Next may own it."""
+        foreign = relocated / "swarm.service"
+        foreign.write_text("[Unit]\nDescription=Something else\n")
+        (relocated / "swarm-legacy.service").write_text("[Unit]\n")
+
+        with patch("swarm.service._systemctl"):
+            uninstall_service()
+
+        assert foreign.exists()
+
+    def test_status_asks_about_the_relocated_unit(self, relocated: Path) -> None:
+        from swarm.service import service_status
+
+        with patch("swarm.service._systemctl") as mock_ctl:
+            mock_ctl.return_value = SimpleNamespace(stdout="active", stderr="")
+            service_status()
+
+        assert ("status", "swarm-legacy.service") in [c.args for c in mock_ctl.call_args_list]
+
+
+class TestUninstallRefusesAForeignUnit:
+    """Never stop or delete a unit that is not ours.
+
+    ``current_unit_name()`` answers "swarm.service" on an un-relocated
+    install — and ``swarm`` is exactly the name Legacy is handing to Swarm
+    Next.  A name is not ownership: before touching a unit, read it and
+    check it launches this package.
+    """
+
+    @pytest.fixture
+    def unit(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        from swarm import service as svc
+
+        path = tmp_path / "swarm.service"
+        monkeypatch.setattr(svc, "_SERVICE_PATH", path)
+        monkeypatch.setattr(svc, "current_unit_name", lambda: "swarm.service")
+        return path
+
+    def test_a_next_unit_is_left_alone(self, unit: Path) -> None:
+        unit.write_text(
+            "[Unit]\nDescription=Swarm application and web UI\n"
+            "[Service]\nExecStart=/home/u/.local/lib/swarm/current/bin/swarm-api\n"
+        )
+
+        with patch("swarm.service._systemctl") as mock_ctl:
+            result = uninstall_service()
+
+        assert result is False
+        assert unit.exists()
+        assert mock_ctl.call_args_list == []  # not even a stop
+
+    def test_our_own_unit_is_removed(self, unit: Path) -> None:
+        unit.write_text(
+            "[Unit]\nDescription=Swarm (legacy) Web Dashboard\n"
+            "[Service]\nExecStart=/home/u/.local/bin/swarm serve\n"
+        )
+
+        with patch("swarm.service._systemctl"):
+            assert uninstall_service() is True
+        assert not unit.exists()
+
+    def test_a_dev_unit_is_ours_too(self, unit: Path) -> None:
+        """``uv run swarm-legacy serve`` is how a source checkout runs."""
+        unit.write_text("[Service]\nExecStart=/usr/bin/uv run swarm-legacy serve\n")
+
+        with patch("swarm.service._systemctl"):
+            assert uninstall_service() is True
+
+    def test_a_missing_unit_still_stops_the_service(self, unit: Path) -> None:
+        """Nothing to read, nothing to protect — the old behaviour stands."""
+        with patch("swarm.service._systemctl") as mock_ctl:
+            assert uninstall_service() is False
+
+        assert ("stop", "swarm.service") in [c.args for c in mock_ctl.call_args_list]

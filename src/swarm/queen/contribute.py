@@ -306,7 +306,7 @@ def open_pr(
         return PRResult(branch=branch, pr_url=None, message=f"git add failed: {add.stderr}")
     commit_msg = (
         "docs(queen): promote local CLAUDE.md edits to QUEEN_SYSTEM_PROMPT\n\n"
-        "Emitted by `swarm queen contribute-claude-md --open-pr` (task #258).\n"
+        "Emitted by `swarm-legacy queen contribute-claude-md --open-pr` (task #258).\n"
         "This brings the shipped constant into alignment with the authored "
         "CLAUDE.md at the swarm install that ran this command."
     )
@@ -320,7 +320,7 @@ def open_pr(
     pr_body = (
         "Promotes local edits to `~/.swarm/queen/workdir/CLAUDE.md` back into "
         "`QUEEN_SYSTEM_PROMPT` (`src/swarm/queen/runtime.py`).\n\n"
-        "Once merged, run `swarm queen contribute-claude-md --mark-synced` on "
+        "Once merged, run `swarm-legacy queen contribute-claude-md --mark-synced` on "
         "the contributing install so the drift reconcile no longer flags this "
         "delta."
     )

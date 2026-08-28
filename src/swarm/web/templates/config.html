@@ -911,7 +911,7 @@
     <div id="config-tab-test" class="config-tab" style="display:none">
         <div class="config-section">
             <h3>Test Mode</h3>
-            <p class="help-text">Settings for <code>swarm test</code> — the self-contained test runner with auto-shutdown.</p>
+            <p class="help-text">Settings for <code>swarm-legacy test</code> — the self-contained test runner with auto-shutdown.</p>
             {{ config_number('port', 'Dedicated port for test server', 'cfg-test-port', config.test.port, step=1, min=1024, max=65535, restart=True) }}
             {{ config_number('auto_resolve_delay', 'Seconds before Queen auto-resolves test proposals', 'cfg-test-auto_resolve_delay', config.test.auto_resolve_delay, step=0.5, min=0) }}
             {{ config_number('auto_complete_min_idle', 'Seconds idle before completing test tasks', 'cfg-test-auto_complete_min_idle', config.test.auto_complete_min_idle, step=1, min=1) }}

@@ -12,13 +12,24 @@ Resolution order, most explicit first:
 2. ``~/.swarm-legacy`` **if it exists** — the post-relocation home.  Its
    existence is the marker; there is no separate flag file to fall out of
    sync with reality.
-3. ``~/.swarm`` — the pre-relocation home, still correct for every
-   install that has not run ``swarm relocate``.
+3. ``~/.swarm`` **if it exists** — the pre-relocation home, still correct
+   for every install that has not run ``swarm relocate``.
+4. ``~/.swarm-legacy`` — nothing on this machine yet, so a fresh install
+   starts where a relocated one ends up.
 
 Rule 2 is checked before rule 3 on purpose.  After a relocation something
 else may well create a fresh ``~/.swarm`` (that is the point of freeing
 the name); preferring the relocated directory means Legacy keeps reading
 its own state instead of silently adopting an empty stranger.
+
+Rule 4 is why rule 3 is conditional.  The fallback used to be ``~/.swarm``
+unconditionally, so a *brand-new* install re-occupied the name Legacy was
+retired from — Swarm Next owns ``swarm`` now — and then greeted the
+operator with the relocation banner asking them to undo what the install
+had just done, terminating the workers it had only now started.  A machine
+with no Legacy state has nothing to preserve and no reason to take the old
+name, so it does not.  Nothing about an existing install changes: rule 3
+still finds ``~/.swarm`` wherever it is already there.
 
 Callers should treat the result as stable for the life of the process.
 ``swarm relocate`` moves the directory and then re-execs, so nothing has
@@ -53,7 +64,10 @@ def state_dir() -> Path:
     relocated = relocated_state_dir()
     if relocated.is_dir():
         return relocated
-    return original_state_dir()
+    original = original_state_dir()
+    if original.is_dir():
+        return original
+    return relocated
 
 
 def is_relocated() -> bool:

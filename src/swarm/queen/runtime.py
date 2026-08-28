@@ -475,7 +475,7 @@ def reconcile_queen_claude_md(
     _log.warning(
         "queen CLAUDE.md drift: shipped updated AND local edits present. "
         "Three-way diff: %s | %s | %s. "
-        "Run `swarm queen sync-claude-md` to reconcile.",
+        "Run `swarm-legacy queen sync-claude-md` to reconcile.",
         target.name,
         latest_path.name,
         last_path.name,

@@ -25,6 +25,7 @@ import pytest
 # can't recur — even from code paths that fire before the per-test
 # function-scoped ``_isolate_db_secrets`` fixture below.
 import swarm.db.core as _swarm_db_core
+import swarm.paths as _swarm_paths
 
 _TEST_DB_DIR = Path(tempfile.mkdtemp(prefix="swarm-tests-"))
 
@@ -38,16 +39,20 @@ os.environ.setdefault("SWARM_VERIFICATION_INTERVAL_SECONDS", "0")
 # costs nothing and leaves no file behind. The counter keeps concurrent daemons in one
 # session from sharing a history file.
 _HISTORY_SEQ = itertools.count()
-_LIVE_DB_PATH = Path.home() / ".swarm" / "swarm.db"
+# Resolved, not hardcoded: a fresh install lives in ~/.swarm-legacy, and a
+# safeguard pointed at ~/.swarm would protect a directory that is not there
+# while the real hive sat unguarded.
+_LIVE_STATE_DIR = _swarm_paths.state_dir()
+_LIVE_DB_PATH = _LIVE_STATE_DIR / "swarm.db"
 _LIVE_DB_MTIME_AT_START = _LIVE_DB_PATH.stat().st_mtime if _LIVE_DB_PATH.exists() else None
-_DAEMON_LOCK_PATH = Path.home() / ".swarm" / "daemon.lock"
+_DAEMON_LOCK_PATH = _LIVE_STATE_DIR / "daemon.lock"
 
 
 def _external_daemon_running(lock_path: Path = _DAEMON_LOCK_PATH) -> bool:
     """True when a *running* ``swarm serve`` daemon (not this test process)
     holds the lock file.
 
-    A live daemon legitimately WAL-checkpoints ``~/.swarm/swarm.db`` every
+    A live daemon legitimately WAL-checkpoints the live ``swarm.db`` every
     300s, so the mtime-based live-DB safeguard cannot attribute a change to
     a test and must stand down. In CI no daemon runs, so the strict check
     still fires and keeps its data-loss protection (see the 2026-05-06
@@ -522,7 +527,7 @@ def make_daemon(
 # So the guard is per-test and behavioural rather than a one-time patch of the
 # paths we happen to know about. It does not care WHO attached the handler.
 
-_PROD_LOG = str(Path.home() / ".swarm" / "swarm.log")
+_PROD_LOG = str(_LIVE_STATE_DIR / "swarm.log")
 
 # Tests that were caught re-attaching, reported at session end so the culprit is
 # named rather than merely neutralised.

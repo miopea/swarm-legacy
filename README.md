@@ -9,7 +9,7 @@
 >
 > Moving an existing hive across? See
 > [Swarm Next migration finalization](docs/specs/swarm-next-migration-finalization.md)
-> and the `swarm migration preview / finish / reverse` commands.
+> and the `swarm-legacy migration preview / finish / reverse` commands.
 
 A web-based control center for AI coding agents — [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Gemini CLI](https://github.com/google-gemini/gemini-cli), and [Codex CLI](https://github.com/openai/codex). Manage one agent or ten from a single browser tab — with autopilot, a task board, AI coordination, and email integration.
 
@@ -100,20 +100,20 @@ Drones are specialized background sweepers that share the daemon's poll loop. Ea
 
 - **Jira integration** -- two-way sync with Jira Cloud (OAuth 2.0), import/export tasks, create Jira issues from the task board
 - **REST API** -- full JSON API with 250+ routes and OpenAPI docs at `/api/docs/ui` (open `http://localhost:9090/api/docs/ui` with the dashboard running)
-- **SQLite persistence** -- tasks, proposals, messages, pipelines, skills, and history are stored in `swarm.db` inside the state directory — `~/.swarm`, or `~/.swarm-legacy` after [`swarm relocate`](#relocating-off-the-swarm-name--swarm-relocate); YAML is the seed/import format
+- **SQLite persistence** -- tasks, proposals, messages, pipelines, skills, and history are stored in `swarm.db` inside the state directory — `~/.swarm`, or `~/.swarm-legacy` after [`swarm-legacy relocate`](#relocating-off-the-swarm-name--swarm-relocate); YAML is the seed/import format
 - **Resource monitoring** -- memory/swap thresholds with optional auto-suspend of workers on system pressure
 - **In-app feedback** -- a footer button opens a bug / feature / question form; submissions are filed as GitHub issues via the `gh` CLI, with a preview-and-edit step and automatic redaction of sensitive paths
 - **Remote access** -- Cloudflare Tunnel support for reaching the dashboard from a phone or remote machine; optional named domain via `tunnel_domain`
 - **Notifications** -- terminal bell, desktop, and browser push alerts
-- **Tool-usage analytics** -- `swarm analyze-tools` summarises MCP calls, errors, and active workers from the buzz log so you can spot tool descriptions that need rewriting
-- **Test harness reproducibility** -- `swarm test --pin-model=<id>` records an infra snapshot (model, provider, worker count, env fingerprint) in every test report so regressions are debuggable instead of mysterious
+- **Tool-usage analytics** -- `swarm-legacy analyze-tools` summarises MCP calls, errors, and active workers from the buzz log so you can spot tool descriptions that need rewriting
+- **Test harness reproducibility** -- `swarm-legacy test --pin-model=<id>` records an infra snapshot (model, provider, worker count, env fingerprint) in every test report so regressions are debuggable instead of mysterious
 
 ## Requirements
 
 - Python 3.12+ (ships with the SQLite 3 stdlib Swarm uses for `swarm.db`)
 - [uv](https://docs.astral.sh/uv/)
 - [GitHub CLI](https://cli.github.com/) (`gh`) — optional; required only for the in-app feedback submitter
-- **WSL users:** systemd must be enabled inside WSL for the auto-start service. `swarm init` detects when it's not and offers to configure `/etc/wsl.conf` for you (requires sudo).
+- **WSL users:** systemd must be enabled inside WSL for the auto-start service. `swarm-legacy init` detects when it's not and offers to configure `/etc/wsl.conf` for you (requires sudo).
 - At least one AI coding agent CLI:
   - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`) — production-ready, also powers the Queen conductor
   - [Gemini CLI](https://github.com/google-gemini/gemini-cli) (`gemini`) — experimental
@@ -128,7 +128,7 @@ uv tool install git+https://github.com/miopea/swarm-legacy.git
 This puts `swarm` on your PATH. No clone, no venv. Then run the setup wizard:
 
 ```bash
-swarm init
+swarm-legacy init
 ```
 
 This does four things:
@@ -139,11 +139,11 @@ This does four things:
 
 The dashboard is live at `http://localhost:9090` immediately after init. On WSL, a VBS auto-start script is placed in your Windows Startup folder so the full chain works unattended: **Windows boots → VBS wakes WSL → systemd starts → dashboard is ready.**
 
-If a config already exists, `swarm init` offers three choices: **keep** the current config, **port** settings (carry over passwords, drone/queen tuning, notifications, etc. while refreshing workers from a new project scan), or start **fresh** (backs up the old config to `.yaml.bak`).
+If a config already exists, `swarm-legacy init` offers three choices: **keep** the current config, **port** settings (carry over passwords, drone/queen tuning, notifications, etc. while refreshing workers from a new project scan), or start **fresh** (backs up the old config to `.yaml.bak`).
 
 ## Quick Start
 
-The dashboard is already running after `swarm init`. Open it and launch your first workers:
+The dashboard is already running after `swarm-legacy init`. Open it and launch your first workers:
 
 1. Open `http://localhost:9090`
 2. Click **Launch Brood** and select the workers or groups to start
@@ -152,7 +152,7 @@ Workers appear in real-time. Attach to any terminal, create tasks, and let drone
 
 ![Launch Brood — select workers and groups to launch](docs/screenshots/workers-launched.png)
 
-The dashboard auto-starts on boot — just open the app each day. You can also launch workers from the CLI with `swarm start` (see [CLI Reference](#cli-reference)).
+The dashboard auto-starts on boot — just open the app each day. You can also launch workers from the CLI with `swarm-legacy start` (see [CLI Reference](#cli-reference)).
 
 ## Install as App (PWA)
 
@@ -241,7 +241,7 @@ Skill commands are configurable via the `workflows:` section in swarm.yaml. Set 
 
 ### Task Lifecycle
 
-1. **Create** -- from the dashboard, CLI (`swarm tasks create`), or by dragging an email onto the task board
+1. **Create** -- from the dashboard, CLI (`swarm-legacy tasks create`), or by dragging an email onto the task board
 2. **Assign** -- Queen proposes an assignment (or operator assigns manually) → worker receives skill invocation. Tasks with `depends_on` are blocked until all dependency tasks are completed.
 3. **Execute** -- worker's agent session runs the skill pipeline
 4. **Complete** -- Queen detects idle worker, proposes completion with resolution summary → operator approves
@@ -302,9 +302,9 @@ On each daemon startup, Swarm reconciles the on-disk `CLAUDE.md` against the shi
 Reconcile from the CLI:
 
 ```
-swarm queen sync-claude-md                     # three-way status (no writes)
-swarm queen sync-claude-md --accept-shipped    # take the new ship; discard local edits
-swarm queen sync-claude-md --keep-local        # acknowledge drift; preserve local
+swarm-legacy queen sync-claude-md                     # three-way status (no writes)
+swarm-legacy queen sync-claude-md --accept-shipped    # take the new ship; discard local edits
+swarm-legacy queen sync-claude-md --keep-local        # acknowledge drift; preserve local
 ```
 
 ### Configuration
@@ -347,7 +347,7 @@ Swarm runs an MCP (Model Context Protocol) server on the same port as the dashbo
 | `swarm_get_playbooks` | Recall reusable procedures synthesized from previously-successful tasks (look before re-deriving a solved approach) |
 | `swarm_batch` | Run multiple swarm_* ops in a single round-trip (sequential; nested batch rejected) |
 
-The server speaks both Streamable HTTP (`POST /mcp`) and legacy SSE (`GET /mcp/sse` + `POST /mcp/message`) so any MCP-capable client works. Claude Code hook installation wires this up automatically during `swarm init`.
+The server speaks both Streamable HTTP (`POST /mcp`) and legacy SSE (`GET /mcp/sse` + `POST /mcp/message`) so any MCP-capable client works. Claude Code hook installation wires this up automatically during `swarm-legacy init`.
 
 ### Queen MCP tools
 
@@ -474,9 +474,9 @@ Swarm includes built-in Cloudflare Tunnel support for accessing the dashboard fr
 
 The dashboard checks for updates automatically on startup and shows a banner when a new version is available — click **Update & Restart** to install it. You can also check manually from the dashboard footer. Your config (`swarm.yaml`) is never touched by upgrades.
 
-Claude Code hooks and the cross-task hook script (`<state>/hooks/cross-task-hook.sh`) are automatically reinstalled every time the daemon starts (`swarm serve`), so they stay in sync with the installed package version — no manual `swarm init` or `swarm install-hooks` needed after upgrades.
+Claude Code hooks and the cross-task hook script (`<state>/hooks/cross-task-hook.sh`) are automatically reinstalled every time the daemon starts (`swarm-legacy serve`), so they stay in sync with the installed package version — no manual `swarm-legacy init` or `swarm-legacy install-hooks` needed after upgrades.
 
-### Relocating off the `swarm` name — `swarm relocate`
+### Relocating off the `swarm` name — `swarm-legacy relocate`
 
 > [!WARNING]
 > **This is a destructive update. It takes the pty-holder sidecar offline, which
@@ -484,7 +484,11 @@ Claude Code hooks and the cross-task hook script (`<state>/hooks/cross-task-hook
 > tasks, database and history are *not* modified — only where they live.
 
 Swarm (legacy) originally owned the `swarm` command, `swarm.service`, and `~/.swarm`.
-`swarm relocate` hands those names back and moves this hive alongside them:
+`swarm-legacy relocate` hands those names back and moves this hive alongside them:
+
+**A fresh install has nothing to relocate.** Since 2026.8.28 a machine with no
+existing hive starts in `~/.swarm-legacy` directly, so the names below are never
+taken in the first place. Relocation is only for an install that predates that.
 
 | | Before | After |
 |---|---|---|
@@ -493,7 +497,8 @@ Swarm (legacy) originally owned the `swarm` command, `swarm.service`, and `~/.sw
 | State | `~/.swarm` | `~/.swarm-legacy` |
 
 Everywhere else in this README, **"the state directory"** means whichever of those
-two you are on — `~/.swarm` before relocating, `~/.swarm-legacy` after. It holds
+two you are on — `~/.swarm` on an install that predates the relocation,
+`~/.swarm-legacy` after relocating and on every fresh install. It holds
 `swarm.db`, the holder socket, logs, uploads and the Queen's workdir. Code should
 never hardcode either: `swarm.paths.state_dir()` resolves it.
 
@@ -505,15 +510,15 @@ you keep `swarm`, `swarm.service` and `~/.swarm` until you choose to relocate.
 ```bash
 # 1. Update. Nothing moves; both `swarm` and `swarm-legacy` are now installed.
 #    (Or click Update & Restart in the dashboard.)
-swarm --version                 # expect 2026.8.21 or later
+swarm-legacy --version          # expect 2026.8.28 or later
 
 # 2. Look before you leap. Touches nothing.
-swarm relocate --dry-run
+swarm-legacy relocate --dry-run
 
 # 3. Stop or finish your workers — the next step terminates them.
 
 # 4. Relocate. Asks you to type 'relocate'.
-swarm relocate
+swarm-legacy relocate
 
 # 5. From here on the hive answers to `swarm-legacy`.
 swarm-legacy status
@@ -543,7 +548,7 @@ writing to the old directory through an already-open handle. There is no way to
 move a bound socket, so the workers go down with it.
 
 Both `swarm` and `swarm-legacy` ship together, so an install that has **not**
-relocated keeps working unchanged. `swarm relocate` is the only thing that
+relocated keeps working unchanged. `swarm-legacy relocate` is the only thing that
 removes the old name, and every step is idempotent — if it is interrupted, run
 it again rather than repairing by hand.
 
@@ -565,46 +570,46 @@ Already relocated? The command says so and exits without touching anything.
 
 ## Service Management
 
-`swarm init` handles service setup automatically (systemd on Linux/WSL, launchd on macOS). These commands are for manual overrides:
+`swarm-legacy init` handles service setup automatically (systemd on Linux/WSL, launchd on macOS). These commands are for manual overrides:
 
 ```bash
-swarm install-service              # install/start the service
-swarm install-service --uninstall  # remove it
-systemctl --user status swarm      # check status
-journalctl --user -u swarm -f     # stream service logs
+swarm-legacy install-service              # install/start the service
+swarm-legacy install-service --uninstall  # remove it
+systemctl --user status swarm-legacy   # check status
+journalctl --user -u swarm-legacy -f   # stream service logs
 ```
 
 Uninstalling the service leaves your config and database untouched — `~/.config/swarm/` and `~/.swarm/` (including `swarm.db`) are preserved so you can reinstall without losing state.
 
-**WSL prerequisite:** systemd must be enabled inside WSL. `swarm init` detects when it's not and offers to configure `/etc/wsl.conf` automatically (requires sudo). After enabling, restart WSL (`wsl --shutdown` from PowerShell) and re-run `swarm init`.
+**WSL prerequisite:** systemd must be enabled inside WSL. `swarm-legacy init` detects when it's not and offers to configure `/etc/wsl.conf` automatically (requires sudo). After enabling, restart WSL (`wsl --shutdown` from PowerShell) and re-run `swarm-legacy init`.
 
 ## CLI Reference
 
 | Command | Description |
 |---------|-------------|
-| `swarm start [target]` | Launch workers + web dashboard + open browser |
-| `swarm launch <target>` | Start workers (group name, worker name, number, or `-a`) |
-| `swarm serve` | Run web dashboard in foreground |
-| `swarm status` | One-shot status check of all workers |
-| `swarm send <target> <msg>` | Send a message to a worker, group, or `all` |
-| `swarm kill <worker>` | Kill a worker's PTY process |
-| `swarm tasks <action>` | Manage tasks (`list`, `create`, `assign`, `complete`) |
-| `swarm web start\|stop\|status` | Manage web dashboard as background process |
-| `swarm daemon` | Headless daemon with REST + WebSocket API |
-| `swarm stop` | Stop a running swarm daemon (graceful SIGTERM, then SIGKILL) |
-| `swarm holder-restart` | Restart the PTY holder in place via handoff — every worker's PTY survives, workers don't lose their Claude Code conversation |
-| `swarm init` | Set up hooks, config, background service, and API password |
-| `swarm update` | Check for and install updates from GitHub |
-| `swarm validate` | Validate config |
-| `swarm install-hooks` | Install Claude Code auto-approval hooks |
-| `swarm install-service` | Install/manage background service (systemd or launchd) |
-| `swarm check-states` | Diagnostic: show current worker states from PTY ring buffer |
-| `swarm analyze-tools [--since=7d] [--json]` | Summarise MCP tool usage from the buzz log (calls / errors / error samples per tool) |
-| `swarm db <stats\|export\|prune\|backup\|restore\|check>` | Database management — inspect, export, prune, back up, restore, and integrity-check the hive database. `restore` recovers from a backup (newest auto-backup by default), keeping the replaced DB at `swarm.db.pre-restore` |
-| `swarm queen sync-claude-md [--accept-shipped\|--keep-local]` | Three-way reconcile the interactive Queen's CLAUDE.md against the shipped `QUEEN_SYSTEM_PROMPT` constant. No flags = status report; `--accept-shipped` overwrites on-disk with shipped; `--keep-local` ack drift + preserve edits |
-| `swarm queen contribute-claude-md` | Reverse-sync local interactive-Queen CLAUDE.md edits back into the shipped `QUEEN_SYSTEM_PROMPT` constant — for promoting operator-tuned coordination policy into the next ship |
-| `swarm test [--pin-model=<id>]` | Run supervised orchestration tests — scaffolds a synthetic project, auto-resolves proposals, and generates an AI-powered report to `~/.swarm/reports/`. `--pin-model` records the model identifier in the infra snapshot for reproducible regressions |
-| `swarm tunnel [--port N]` | Start Cloudflare Tunnel for remote HTTPS access |
+| `swarm-legacy start [target]` | Launch workers + web dashboard + open browser |
+| `swarm-legacy launch <target>` | Start workers (group name, worker name, number, or `-a`) |
+| `swarm-legacy serve` | Run web dashboard in foreground |
+| `swarm-legacy status` | One-shot status check of all workers |
+| `swarm-legacy send <target> <msg>` | Send a message to a worker, group, or `all` |
+| `swarm-legacy kill <worker>` | Kill a worker's PTY process |
+| `swarm-legacy tasks <action>` | Manage tasks (`list`, `create`, `assign`, `complete`) |
+| `swarm-legacy web start\|stop\|status` | Manage web dashboard as background process |
+| `swarm-legacy daemon` | Headless daemon with REST + WebSocket API |
+| `swarm-legacy stop` | Stop a running swarm daemon (graceful SIGTERM, then SIGKILL) |
+| `swarm-legacy holder-restart` | Restart the PTY holder in place via handoff — every worker's PTY survives, workers don't lose their Claude Code conversation |
+| `swarm-legacy init` | Set up hooks, config, background service, and API password |
+| `swarm-legacy update` | Check for and install updates from GitHub |
+| `swarm-legacy validate` | Validate config |
+| `swarm-legacy install-hooks` | Install Claude Code auto-approval hooks |
+| `swarm-legacy install-service` | Install/manage background service (systemd or launchd) |
+| `swarm-legacy check-states` | Diagnostic: show current worker states from PTY ring buffer |
+| `swarm-legacy analyze-tools [--since=7d] [--json]` | Summarise MCP tool usage from the buzz log (calls / errors / error samples per tool) |
+| `swarm-legacy db <stats\|export\|prune\|backup\|restore\|check>` | Database management — inspect, export, prune, back up, restore, and integrity-check the hive database. `restore` recovers from a backup (newest auto-backup by default), keeping the replaced DB at `swarm.db.pre-restore` |
+| `swarm-legacy queen sync-claude-md [--accept-shipped\|--keep-local]` | Three-way reconcile the interactive Queen's CLAUDE.md against the shipped `QUEEN_SYSTEM_PROMPT` constant. No flags = status report; `--accept-shipped` overwrites on-disk with shipped; `--keep-local` ack drift + preserve edits |
+| `swarm-legacy queen contribute-claude-md` | Reverse-sync local interactive-Queen CLAUDE.md edits back into the shipped `QUEEN_SYSTEM_PROMPT` constant — for promoting operator-tuned coordination policy into the next ship |
+| `swarm-legacy test [--pin-model=<id>]` | Run supervised orchestration tests — scaffolds a synthetic project, auto-resolves proposals, and generates an AI-powered report to `~/.swarm/reports/`. `--pin-model` records the model identifier in the infra snapshot for reproducible regressions |
+| `swarm-legacy tunnel [--port N]` | Start Cloudflare Tunnel for remote HTTPS access |
 
 ### Global Flags
 
@@ -619,7 +624,7 @@ Uninstalling the service leaves your config and database untouched — `~/.confi
 
 | Variable | Description |
 |----------|-------------|
-| `SWARM_PORT` | Override the web dashboard / API server port (default: 9090). If 9090 is already in use, set `SWARM_PORT=9091` (or any free port) before launching `swarm serve`. |
+| `SWARM_PORT` | Override the web dashboard / API server port (default: 9090). If 9090 is already in use, set `SWARM_PORT=9091` (or any free port) before launching `swarm-legacy serve`. |
 | `SWARM_SESSION_NAME` | Override the session name |
 | `SWARM_WATCH_INTERVAL` | Override the poll interval (seconds) |
 | `SWARM_DAEMON_URL` | Connect to a remote daemon URL |
@@ -636,9 +641,9 @@ All settings are managed from the web dashboard at `/config` — a tabbed editor
 
 ![Config editor — workers, drones, Queen tuning](docs/screenshots/config-editor.png)
 
-**Runtime state lives in SQLite — `swarm.db` in the state directory is the source of truth.** On first run Swarm seeds the DB from a YAML (renaming the source file to `config.yaml.migrated` once consumed); from then on the daemon reads and writes workers, groups, approval rules, tasks, proposals, task history, messages, pipelines, buzz log, secrets, and scalar config directly from the DB. Dashboard edits hit the DB immediately and are hot-applied in the same request; **YAML is not re-written** by the dashboard. Use `swarm db stats`, `swarm db export`, `swarm db backup`, `swarm db restore`, and `swarm db prune` to inspect and maintain it (the daemon also auto-backs-up daily and runs an integrity check).
+**Runtime state lives in SQLite — `swarm.db` in the state directory is the source of truth.** On first run Swarm seeds the DB from a YAML (renaming the source file to `config.yaml.migrated` once consumed); from then on the daemon reads and writes workers, groups, approval rules, tasks, proposals, task history, messages, pipelines, buzz log, secrets, and scalar config directly from the DB. Dashboard edits hit the DB immediately and are hot-applied in the same request; **YAML is not re-written** by the dashboard. Use `swarm-legacy db stats`, `swarm-legacy db export`, `swarm-legacy db backup`, `swarm-legacy db restore`, and `swarm-legacy db prune` to inspect and maintain it (the daemon also auto-backs-up daily and runs an integrity check).
 
-**YAML is a bootstrap-only seed.** `swarm init` writes the initial config to `~/.config/swarm/config.yaml` and you can also place a `swarm.yaml` in your project directory. The YAML loaders are consulted **only when `swarm.db` has no user data** (fresh install, explicit DB-empty bootstrap). For a populated DB the YAML loaders — including the `-c /path/to/config.yaml` flag — are intentionally ignored, with a WARNING log on every silently-discarded `-c`. Re-importing from YAML after first run is possible but explicit; treat `swarm.yaml` as a seed/import format, not a live mirror.
+**YAML is a bootstrap-only seed.** `swarm-legacy init` writes the initial config to `~/.config/swarm/config.yaml` and you can also place a `swarm.yaml` in your project directory. The YAML loaders are consulted **only when `swarm.db` has no user data** (fresh install, explicit DB-empty bootstrap). For a populated DB the YAML loaders — including the `-c /path/to/config.yaml` flag — are intentionally ignored, with a WARNING log on every silently-discarded `-c`. Re-importing from YAML after first run is possible but explicit; treat `swarm.yaml` as a seed/import format, not a live mirror.
 
 ### Full Example
 
@@ -846,9 +851,9 @@ test:
 
 - **`provider`** -- global AI provider (`claude`, `gemini`, `codex`). Claude is production-ready; Gemini and Codex are experimental stubs. Per-worker `provider` overrides the global default.
 - **`workers[].description`** -- helps the Queen match tasks to workers; shown in dashboards
-- **`default_group`** -- auto-launched when you run `swarm start` with no target
+- **`default_group`** -- auto-launched when you run `swarm-legacy start` with no target
 - **`drones.approval_rules`** -- regex pattern → action (`approve` or `escalate`) for choice menus
-- **`queen.system_prompt`** -- *headless-decision prompt only* (auto-assign, oversight, completion eval, escalation). Leave empty to auto-seed `HEADLESS_DECISION_PROMPT` on daemon start. The interactive Queen's role lives in `~/.swarm/queen/workdir/CLAUDE.md`, edited in place (see `swarm queen sync-claude-md` for update-drift reconciliation).
+- **`queen.system_prompt`** -- *headless-decision prompt only* (auto-assign, oversight, completion eval, escalation). Leave empty to auto-seed `HEADLESS_DECISION_PROMPT` on daemon start. The interactive Queen's role lives in `~/.swarm/queen/workdir/CLAUDE.md`, edited in place (see `swarm-legacy queen sync-claude-md` for update-drift reconciliation).
 - **`workflows`** -- override skill commands per task type; set to empty to disable
 - **`drones.poll_interval_buzzing/waiting/resting`** -- per-state poll interval overrides (set to `0` to use defaults derived from `poll_interval`: buzzing=2×, waiting=1×, resting=3×)
 - **`drones.allowed_read_paths`** -- paths where Read() tool auto-approves without escalation
@@ -1026,7 +1031,7 @@ The PTY-over-WebSocket terminal bridge supports up to 20 concurrent sessions.
 
 ## Testing
 
-`swarm test` runs a supervised end-to-end orchestration test against a dedicated instance (port `9091` by default).
+`swarm-legacy test` runs a supervised end-to-end orchestration test against a dedicated instance (port `9091` by default).
 
 1. **Scaffolds a synthetic project** -- copies a fixture project to a temp directory and initializes a git repo with pre-loaded tasks from `tasks.yaml`
 2. **Auto-resolves proposals** -- a TestOperator subscribes to new proposals, waits `auto_resolve_delay` seconds (default `4.0`), then asks the Queen to evaluate and approve or reject each one
@@ -1040,7 +1045,7 @@ Reports are saved as JSONL logs at `~/.swarm/reports/`. Configure via the `test:
 git clone https://github.com/miopea/swarm-legacy.git
 cd swarm-legacy
 uv sync                    # install dependencies
-uv run swarm --help        # run CLI from source
+uv run swarm-legacy --help  # run CLI from source
 uv run pytest tests/ -q    # run test suite
 uv run ruff check src/     # linting
 uv run ruff format src/    # formatting

@@ -3608,13 +3608,13 @@ def test_daemon_lock_prevents_duplicate(tmp_path):
         assert fd1 >= 0
 
         # Second acquisition should fail with SystemExit and the message
-        # must point at the real recovery command ('swarm stop'), not the
+        # must point at the real recovery command ('swarm-legacy stop'), not the
         # nonexistent 'swarm kill --all' that leaked in earlier versions.
         with pytest.raises(SystemExit) as exc_info:
             _acquire_daemon_lock()
         msg = str(exc_info.value)
-        assert "Another swarm daemon" in msg
-        assert "swarm stop" in msg
+        assert "Another Swarm (legacy) daemon" in msg
+        assert "swarm-legacy stop" in msg
         assert "kill --all" not in msg
 
         # Clean up
@@ -3624,9 +3624,9 @@ def test_daemon_lock_prevents_duplicate(tmp_path):
         os.close(fd1)
 
 
-def test_daemon_lock_stale_live_holder_points_at_swarm_stop(tmp_path, monkeypatch):
+def test_daemon_lock_stale_live_holder_points_at_swarm_legacy_stop(tmp_path, monkeypatch):
     """If a live (non-stale) holder owns the lock, the error message must also
-    reference 'swarm stop' — this is the second error path inside
+    reference 'swarm-legacy stop' — this is the second error path inside
     _acquire_daemon_lock and was missed by an earlier replace_all fix.
     """
     import os
@@ -3645,7 +3645,7 @@ def test_daemon_lock_stale_live_holder_points_at_swarm_stop(tmp_path, monkeypatc
     with pytest.raises(SystemExit) as exc_info:
         runner_mod._acquire_daemon_lock()
     msg = str(exc_info.value)
-    assert "swarm stop" in msg
+    assert "swarm-legacy stop" in msg
     assert "kill --all" not in msg
 
     import fcntl as _fcntl

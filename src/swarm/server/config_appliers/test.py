@@ -1,4 +1,4 @@
-"""``test`` section applier — swarm test harness configuration."""
+"""``test`` section applier — swarm-legacy test harness configuration."""
 
 from __future__ import annotations
 

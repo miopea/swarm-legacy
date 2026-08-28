@@ -1,4 +1,4 @@
-"""Install/uninstall a systemd or launchd service for ``swarm serve``."""
+"""Install/uninstall a systemd or launchd service for ``swarm-legacy serve``."""
 
 from __future__ import annotations
 
@@ -20,9 +20,9 @@ _SERVICE_PATH = _SERVICE_DIR / _SERVICE_NAME
 def current_unit_name() -> str:
     """The unit this install actually uses.
 
-    After ``swarm relocate`` that is ``swarm-legacy.service``.  Resolving
-    it here rather than at import keeps ``swarm init`` and
-    ``swarm install-service`` from recreating ``swarm.service`` on a
+    After ``swarm-legacy relocate`` that is ``swarm-legacy.service``.  Resolving
+    it here rather than at import keeps ``swarm-legacy init`` and
+    ``swarm-legacy install-service`` from recreating ``swarm.service`` on a
     relocated box — which would re-occupy the name the relocation just
     freed, and point it at a ``swarm`` entrypoint that no longer exists.
     """
@@ -188,7 +188,7 @@ def _detect_source_dir() -> str | None:
 
     Checks two scenarios:
     1. ``uv tool install .`` — package metadata has a ``file://`` URL
-    2. ``uv run swarm init`` — swarm.__file__ lives inside a source tree
+    2. ``uv run swarm-legacy init`` — swarm.__file__ lives inside a source tree
     """
     # 1. Local-path tool install (uv tool install /path/to/swarm)
     try:
@@ -308,16 +308,61 @@ def install_service(config_path: str | None = None) -> Path:
     return unit_path
 
 
+# ``ExecStart=<anything>/swarm serve`` or ``... swarm-legacy serve`` — the
+# shape every unit this module has ever generated, dev checkouts (``uv run
+# swarm-legacy serve``) included.  Swarm Next's unit runs ``swarm-api`` and
+# matches nothing here.
+_OURS_RE = re.compile(r"^ExecStart=.*[/ ]swarm(?:-legacy)? serve\b", re.MULTILINE)
+
+
+def _unit_is_ours(unit: str) -> bool:
+    """True when *unit* launches this package, so removing it is ours to do.
+
+    A unit NAME is not ownership.  ``current_unit_name()`` answers
+    ``swarm.service`` on an un-relocated install, and ``swarm`` is precisely
+    the name Legacy hands to Swarm Next — so on a box where Next has taken
+    it, "remove swarm.service" would mean removing Next's.  Read the file and
+    check what it actually starts, the same way
+    :func:`swarm.update._drop_reoccupied_entrypoint` checks a shim before
+    deleting it.
+
+    Falls back to the Description for a unit whose ExecStart an operator has
+    rewritten by hand, which is a supported thing to have done.
+    """
+    if _OURS_RE.search(unit):
+        return True
+    return _CURRENT_DESCRIPTION in unit or _LEGACY_DESCRIPTION in unit
+
+
 def uninstall_service() -> bool:
     """Stop, disable, and remove the systemd user service.
 
-    Returns True if the service file existed and was removed.
-    """
-    _systemctl("stop", _SERVICE_NAME)
-    _systemctl("disable", _SERVICE_NAME)
+    Acts on :func:`current_unit_name` — the unit this install actually uses
+    — not on the hardcoded ``swarm.service`` it named until 2026.8.28.  On a
+    relocated install the old code stopped a unit that does not exist,
+    returned False ("nothing to remove"), and left ``swarm-legacy.service``
+    enabled with ``Restart=always``; systemd then brought the daemon the
+    operator had just stopped straight back up.
 
-    if _SERVICE_PATH.exists():
-        _SERVICE_PATH.unlink()
+    The hardcoded name was also actively unsafe on that box.  Relocating
+    hands ``swarm`` to something else — Swarm Next — so unlinking
+    ``swarm.service`` had stopped meaning "remove ours" and started meaning
+    "remove whatever now holds that name".
+
+    Returns True if the unit file existed and was removed.
+    """
+    unit_name = current_unit_name()
+    unit_path = current_unit_path()
+
+    if unit_path.exists() and not _unit_is_ours(unit_path.read_text()):
+        _log.warning("%s exists but does not launch this package — leaving it alone", unit_path)
+        return False
+
+    _systemctl("stop", unit_name)
+    _systemctl("disable", unit_name)
+
+    if unit_path.exists():
+        unit_path.unlink()
         _systemctl("daemon-reload")
         return True
     return False
@@ -325,7 +370,7 @@ def uninstall_service() -> bool:
 
 def service_status() -> str:
     """Return the systemd status output for the swarm service."""
-    result = _systemctl("status", _SERVICE_NAME)
+    result = _systemctl("status", current_unit_name())
     return result.stdout or result.stderr or "unknown"
 
 

@@ -731,7 +731,7 @@ class GroupConfig:
 
 @dataclass
 class TestConfig:
-    """Settings for ``swarm test`` supervised orchestration testing."""
+    """Settings for ``swarm-legacy test`` supervised orchestration testing."""
 
     enabled: bool = False
     port: int = 9091  # dedicated test port (separate from main web UI)

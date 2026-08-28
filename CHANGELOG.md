@@ -6,9 +6,62 @@ Swarm (legacy) uses calendar versioning (`YYYY.M.D.patch`) — see `pyproject.to
 
 ### Features
 
+- **`swarm-legacy uninstall`.** There was no uninstall command, and
+  `SwarmCLI` routes an unrecognised word to `start` as a target — so typing
+  it *started a daemon*, which then failed against the daemon already
+  running. It removes the systemd unit first (the unit carries
+  `Restart=always`, so any other order lets systemd undo the uninstall five
+  seconds later), stops the daemon and the pty-holder, and prints the one
+  step it cannot safely take itself: `uv tool uninstall swarm-ai`, because
+  `uv` owns the entrypoint the command is running from. State is kept unless
+  `--purge` is passed; `~/.config/swarm/` is never touched, because Swarm
+  Next keeps its operator token there.
+
 ### Changes
 
+- **Every command a user is told to type now reads `swarm-legacy`.** Both
+  console scripts ship together, so `swarm-legacy` is correct on every
+  install, relocated or not — while `swarm` is the name Swarm Next is taking.
+  Applies to CLI output, `--help`, the README, the offline page and the
+  config page; `systemctl`/`journalctl` hints resolve the real unit name
+  rather than assuming one. Code comments narrating the old name were left
+  as they were.
+
 ### Fixes
+
+- **A fresh install re-occupied the `swarm` name it had been retired from.**
+  `state_dir()` fell back to `~/.swarm` whenever neither directory existed,
+  so a brand-new install took the old name and then opened the dashboard
+  with the relocation banner telling the operator to undo what the install
+  had just done — terminating the workers it had only now started. The
+  fallback is now `~/.swarm-legacy`: `$SWARM_STATE_DIR`, then
+  `~/.swarm-legacy` if it exists, then `~/.swarm` **if it exists**, then
+  `~/.swarm-legacy`. An existing install is unaffected — rule 3 still finds
+  `~/.swarm` wherever it already is — and a fresh one has nothing to
+  relocate.
+
+- **`uninstall_service()` and `service_status()` named the wrong unit.** They
+  hardcoded `swarm.service` while `install_service()` resolved the name
+  properly. On a relocated install — which, given the fix above, now means
+  every new one — the uninstall stopped a unit that does not exist, reported
+  "nothing to remove", and left `swarm-legacy.service` enabled with
+  `Restart=always`, so systemd brought the daemon straight back. `init`'s
+  "is a unit already installed?" check had the same blind spot. All three go
+  through `current_unit_name()` / `current_unit_path()` now.
+
+- **The uninstall could have removed a unit belonging to Swarm Next.** A
+  name is not ownership: `current_unit_name()` answers `swarm.service` on an
+  un-relocated install, and `swarm` is exactly the name Legacy hands over, so
+  unlinking it had stopped meaning "remove ours". The unit file is now read
+  before it is touched, and one that does not launch this package is left
+  alone and reported as left alone — never as "nothing to remove".
+
+- **A mistyped command started a hive.** The unknown-command fallback exists
+  so `swarm-legacy rcg-v6` works, but `start` accepts a target it cannot
+  resolve and brings the daemon up with no workers, so every typo launched
+  one. A guessed target that names no group or worker now fails with
+  `No such command '<x>'. Did you mean …?`; a real group or worker still
+  launches as before.
 
 ## [2026.8.21.9] - 2026-08-21
 

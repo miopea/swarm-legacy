@@ -115,7 +115,7 @@ class HealthSweep:
             self._emit(
                 "Database integrity check FAILED",
                 "swarm.db failed PRAGMA integrity_check. Stop the daemon and "
-                "restore a backup: swarm db restore",
+                "restore a backup: swarm-legacy db restore",
             )
         elif ok:
             self._integrity_alerted = False

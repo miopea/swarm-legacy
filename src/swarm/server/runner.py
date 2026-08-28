@@ -4,7 +4,7 @@ Extracted from :mod:`swarm.server.daemon` (audit finding #1) so the
 daemon module is just the class.  See
 ``docs/specs/daemon-god-object-refactor.md``.
 
-The CLI (`swarm serve` / `swarm test`) calls into this module to
+The CLI (`swarm-legacy serve` / `swarm-legacy test`) calls into this module to
 construct, start, and supervise a :class:`SwarmDaemon`.  External
 importers historically reached for these names through
 ``swarm.server.daemon``; the daemon module re-exports them for one
@@ -87,12 +87,14 @@ def _acquire_daemon_lock() -> int:
             except OSError:
                 os.close(fd)
                 raise SystemExit(
-                    "Another swarm daemon is already running. Run 'swarm stop' to stop it."
+                    "Another Swarm (legacy) daemon is already running. "
+                    "Run 'swarm-legacy stop' to stop it."
                 )
         else:
             os.close(fd)
             raise SystemExit(
-                "Another swarm daemon is already running. Run 'swarm stop' to stop it."
+                "Another Swarm (legacy) daemon is already running. "
+                "Run 'swarm-legacy stop' to stop it."
             )
     # Write our PID for diagnostics
     os.ftruncate(fd, 0)
@@ -540,7 +542,7 @@ def _print_banner(daemon: SwarmDaemon, host: str, port: int) -> None:
         print(
             f"  {D}├─{R} Workers:    {Y}{n_running}{R} running, "
             f"{Y}{n_configured}{R} configured  "
-            f"{D}(run `swarm launch -a` to start them){R}",
+            f"{D}(run `swarm-legacy launch -a` to start them){R}",
             flush=True,
         )
     drones_str = f"enabled (interval {interval}s)" if drones_enabled else "disabled"

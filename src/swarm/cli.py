@@ -114,7 +114,7 @@ def _load_config_db_first(config_path: str | None) -> HiveConfig:
       4. Load the resulting config from the DB and return it.
       5. If after all of that the DB is still empty (truly fresh
          install, no YAML either), return a default HiveConfig so
-         ``swarm init`` / first-run flows still work.
+         ``swarm-legacy init`` / first-run flows still work.
     """
     # DB is the source of truth.  The ``--config`` YAML override is
     # honoured ONLY when the DB doesn't yet have user data — i.e.
@@ -263,6 +263,13 @@ async def _api_post(
         raise click.ClickException(f"Cannot connect to daemon on port {port}. Is swarm running?")
 
 
+# Set by ``SwarmCLI`` when it routes an unrecognised command to ``start``,
+# and read by ``start_cmd`` once the config is loaded.  See
+# ``SwarmCLI.resolve_command`` for why the decision cannot be made in
+# either place alone.
+_GUESSED_TARGET = "swarm.guessed_target"
+
+
 class SwarmCLI(click.Group):
     """Route unknown subcommands as targets to ``start``."""
 
@@ -273,11 +280,34 @@ class SwarmCLI(click.Group):
                 return cmd_name, cmd, remaining
         except click.UsageError:
             pass
-        # Unknown command -- treat first arg as a target for 'start'
+        # Unknown command -- treat first arg as a target for 'start', which
+        # is what makes ``swarm rcg-v6`` work.  Recorded as a *guess*: this
+        # is the only place that knows the word was not a command, and
+        # ``start`` is the only place that can say whether it names a real
+        # group or worker, because answering that needs the config.
+        #
+        # Unrecorded, the guess was unfalsifiable.  ``start`` accepts a
+        # target it cannot resolve and brings the daemon up with no workers,
+        # so every typo started a hive: ``swarm-legacy uninstall`` answered
+        # "Another swarm daemon is already running", which is the daemon
+        # this invocation had just tried to become.
         start_cmd = self.get_command(ctx, "start")
         if start_cmd is not None:
+            ctx.meta[_GUESSED_TARGET] = args[0]
             return "start", start_cmd, args
         raise click.UsageError(f"No such command '{args[0]}'.")
+
+
+def _unknown_command_error(ctx: click.Context, name: str) -> click.UsageError:
+    """The error click would have raised, plus a nearest-command hint."""
+    import difflib
+
+    known = sorted(ctx.command.list_commands(ctx)) if isinstance(ctx.command, click.Group) else []
+    message = f"No such command '{name}'."
+    close = difflib.get_close_matches(name, known, n=3, cutoff=0.6)
+    if close:
+        message += " Did you mean " + ", ".join(close) + "?"
+    return click.UsageError(message, ctx=ctx)
 
 
 @click.group(cls=SwarmCLI, invoke_without_command=True)
@@ -307,9 +337,9 @@ def main(ctx: click.Context, log_level: str, log_file: str | None, log_format: s
 
     \b
     Run with a target name to launch directly:
-        swarm rcg-v6           # launch 'rcg-v6' group + web dashboard
-        swarm start default    # explicit 'start' subcommand
-        swarm                  # start daemon + open web UI
+        swarm-legacy rcg-v6         # launch 'rcg-v6' group + web dashboard
+        swarm-legacy start default  # explicit 'start' subcommand
+        swarm-legacy                # start daemon + open web UI
     """
     # Stash CLI overrides on context so subcommands (start, serve, …)
     # can re-configure with config-file values once loaded.
@@ -385,7 +415,7 @@ def _resolve_dashboard_port(yaml_path: Path) -> int:
     """Best-effort read of the dashboard port for the post-init link.
 
     Deliberately does **not** go through ``_load_config_db_first`` —
-    that creates the DB and runs ``auto_migrate``, and ``swarm init``
+    that creates the DB and runs ``auto_migrate``, and ``swarm-legacy init``
     promises never to touch the database.  Reads the single ``port``
     row directly when a DB is already there, falls back to the YAML
     seed, then to the documented default.
@@ -520,7 +550,7 @@ def init(  # noqa: C901
 
     **Non-destructive to the database**: swarm stores its state
     (workers, groups, approval rules, tasks, queen sessions, etc.) in
-    ``~/.swarm/swarm.db``.  ``swarm init`` only generates/edits the
+    ``~/.swarm/swarm.db``.  ``swarm-legacy init`` only generates/edits the
     YAML template at ``~/.config/swarm/config.yaml`` and installs
     hooks/services — it never modifies the database.  On first run the
     daemon migrates the YAML into the DB once and then treats the DB
@@ -574,8 +604,12 @@ def init(  # noqa: C901
         # DB is empty but YAML exists — auto-migration will run on
         # next `swarm start`.  Nothing to ask here.
         click.echo(f"  YAML config present at {out_file}.")
-        click.echo("  It will be migrated into swarm.db automatically on the next `swarm start`.")
-        click.echo("  (To start from scratch instead: remove the file and re-run `swarm init`.)")
+        click.echo(
+            "  It will be migrated into swarm.db automatically on the next `swarm-legacy start`."
+        )
+        click.echo(
+            "  (To start from scratch instead: remove the file and re-run `swarm-legacy init`.)"
+        )
         checks.append(("swarm.yaml generated", True))
     else:
         # True first run — no DB, no YAML.  Run the scan + wizard to
@@ -706,8 +740,9 @@ def init(  # noqa: C901
     # --- Step 3: Install systemd service ---
     from swarm.service import (
         _PLIST_PATH,
-        _SERVICE_PATH,
         _check_systemd,
+        current_unit_name,
+        current_unit_path,
         enable_wsl_systemd,
         install_launchd,
         is_macos,
@@ -752,14 +787,14 @@ def init(  # noqa: C901
     elif systemd_err:
         click.echo(f"  {systemd_err}")
         checks.append(("background service", None))
-    elif _SERVICE_PATH.exists():
-        service_hint = "systemctl --user status swarm"
+    elif current_unit_path().exists():
+        service_hint = f"systemctl --user status {current_unit_name()}"
         checks.append(("systemd service", True))
     else:
         try:
             _install_svc(output_path if not skip_config else None)
             service_started = True
-            service_hint = "systemctl --user status swarm"
+            service_hint = f"systemctl --user status {current_unit_name()}"
             checks.append(("systemd service", True))
         except Exception:
             checks.append(("systemd service", False))
@@ -815,7 +850,7 @@ def init(  # noqa: C901
         click.echo(f"    [{indicator:4s}] {label}")
 
     if needs_restart:
-        click.echo("\n  Restart WSL (wsl --shutdown) then re-run: swarm init")
+        click.echo("\n  Restart WSL (wsl --shutdown) then re-run: swarm-legacy init")
     all_ok = all(s is not False for _, s in checks)
     if all_ok and not needs_restart:
         # Installing the service also STARTS it, so by this point the
@@ -850,7 +885,7 @@ def init(  # noqa: C901
                 click.echo(
                     "\n  Note: Ensure ports 80 and 443 are open in your firewall/security group."
                 )
-            click.echo("\n  Ready! Next: swarm start all")
+            click.echo("\n  Ready! Next: swarm-legacy start all")
     elif not all_ok:
         click.echo("\n  Some checks failed -- see above.", err=True)
 
@@ -865,7 +900,7 @@ def _show_available(cfg: HiveConfig) -> None:
     click.echo("\nIndividual workers:")
     for i, w in enumerate(cfg.workers):
         click.echo(f"  [{num_groups + i + 1:2d}] {w.name}")
-    click.echo("\nUsage: swarm <name|number> or swarm start -a")
+    click.echo("\nUsage: swarm-legacy <name|number> or swarm-legacy start -a")
 
 
 def _resolve_launch_workers(
@@ -928,7 +963,7 @@ def launch(group: str | None, config_path: str | None, launch_all: bool, port: i
                 click.echo("No new workers to launch (already running).")
         except Exception as e:
             click.echo(f"Cannot reach daemon at localhost:{api_port}: {e}", err=True)
-            click.echo("Is the daemon running? Start it with: swarm start", err=True)
+            click.echo("Is the daemon running? Start it with: swarm-legacy start", err=True)
             raise SystemExit(1)
 
     asyncio.run(_launch())
@@ -1040,9 +1075,9 @@ def start_cmd(  # noqa: C901
 
     \b
     Examples:
-        swarm                  # start daemon, open web UI
-        swarm rcg-v6           # launch 'rcg-v6' group, open web UI
-        swarm start default    # explicit 'start' subcommand
+        swarm-legacy                # start daemon, open web UI
+        swarm-legacy rcg-v6         # launch 'rcg-v6' group, open web UI
+        swarm-legacy start default  # explicit 'start' subcommand
     """
     import webbrowser
 
@@ -1078,6 +1113,13 @@ def start_cmd(  # noqa: C901
                     click.echo(f"Config error: {e}", err=True)
                 raise SystemExit(1)
             cfg.session_name = session_name
+        elif ctx.meta.get(_GUESSED_TARGET) == target:
+            # Never a target the operator asked for: a word we guessed at
+            # because it was not a command, and the config does not know it
+            # either.  Starting a workerless hive here is how a mistyped
+            # command became a running daemon.
+            parent = ctx.parent or ctx
+            raise _unknown_command_error(parent, target)
         else:
             # Unresolved target -- use it as session name (daemon will handle)
             cfg.session_name = target
@@ -1183,11 +1225,11 @@ def test_cmd(
 
     \b
     Examples:
-        swarm test                    # run on :9091 with 5min timeout
-        swarm test --port 9092        # custom port
-        swarm test --timeout 120      # 2min timeout
-        swarm test --no-cleanup       # keep temp dir after test
-        swarm test --pin-model=claude-opus-4-7  # record model in report
+        swarm-legacy test                    # run on :9091 with 5min timeout
+        swarm-legacy test --port 9092        # custom port
+        swarm-legacy test --timeout 120      # 2min timeout
+        swarm-legacy test --no-cleanup       # keep temp dir after test
+        swarm-legacy test --pin-model=claude-opus-4-7  # record model in report
     """
     import uuid
 
@@ -1501,7 +1543,7 @@ def queen_contribute_claude_md(
 ) -> None:
     """Promote local CLAUDE.md edits back to the shipped QUEEN_SYSTEM_PROMPT.
 
-    Companion to ``swarm queen sync-claude-md`` (#254) — that pulls
+    Companion to ``swarm-legacy queen sync-claude-md`` (#254) — that pulls
     shipped → local on daemon start, this pushes local → shipped on
     operator demand.  Every diff is a candidate for upstream: the Queen
     is a global role, not an operator-specific one, so any local
@@ -1560,7 +1602,7 @@ def queen_contribute_claude_md(
         click.echo("To apply:")
         click.echo(f"  cd {repo_root} && git apply {result.path}")
         click.echo("After upstream merges, run:")
-        click.echo("  swarm queen contribute-claude-md --mark-synced")
+        click.echo("  swarm-legacy queen contribute-claude-md --mark-synced")
         return
 
     # open_pr_flag
@@ -1568,7 +1610,7 @@ def queen_contribute_claude_md(
     if pr.pr_url:
         click.echo(pr.message)
         click.echo(
-            "After merge, run `swarm queen contribute-claude-md --mark-synced` "
+            "After merge, run `swarm-legacy queen contribute-claude-md --mark-synced` "
             "to clear the drift marker."
         )
     else:
@@ -1603,7 +1645,7 @@ def start(config_path: str | None, host: str, port: int | None) -> None:
         from swarm.server.webctl import _WEB_LOG_FILE
 
         click.echo(f"  Logs: {_WEB_LOG_FILE}")
-        click.echo("  Stop with: swarm web stop")
+        click.echo("  Stop with: swarm-legacy web stop")
 
 
 @web.command("stop")
@@ -1646,7 +1688,7 @@ def status(config_path: str | None, port: int | None) -> None:
             data = await _api_get(api_port, "/api/workers", token=_resolve_api_token(cfg))
         except Exception as e:
             click.echo(f"Cannot reach daemon at localhost:{api_port}: {e}", err=True)
-            click.echo("Is the daemon running? Start it with: swarm start", err=True)
+            click.echo("Is the daemon running? Start it with: swarm-legacy start", err=True)
             raise SystemExit(1)
 
         workers = data.get("workers", [])
@@ -1695,7 +1737,7 @@ def check_states(config_path: str | None, port: int | None) -> None:
             data = await _api_get(api_port, "/api/workers", token=_resolve_api_token(cfg))
         except Exception as e:
             click.echo(f"Cannot reach daemon at localhost:{api_port}: {e}", err=True)
-            click.echo("Is the daemon running? Start it with: swarm start", err=True)
+            click.echo("Is the daemon running? Start it with: swarm-legacy start", err=True)
             raise SystemExit(1)
 
         workers = data.get("workers", [])
@@ -1761,7 +1803,7 @@ def send(target: str, message: str, config_path: str | None, port: int | None) -
             data = await _api_get(api_port, "/api/workers", token=token)
         except Exception as e:
             click.echo(f"Cannot reach daemon at localhost:{api_port}: {e}", err=True)
-            click.echo("Is the daemon running? Start it with: swarm start", err=True)
+            click.echo("Is the daemon running? Start it with: swarm-legacy start", err=True)
             raise SystemExit(1)
 
         workers = data.get("workers", [])
@@ -1818,7 +1860,7 @@ def send(target: str, message: str, config_path: str | None, port: int | None) -
     help="Skip SIGTERM and send SIGKILL immediately",
 )
 def stop(timeout: float, force: bool) -> None:
-    """Stop the running swarm daemon.
+    """Stop the running Swarm (legacy) daemon.
 
     Reads the daemon lock file and sends SIGTERM to the holder process,
     waits up to ``--timeout`` seconds for a graceful shutdown, then
@@ -1836,7 +1878,7 @@ def stop(timeout: float, force: bool) -> None:
             click.echo("Lock file exists but contains no readable PID; removing.")
             _DAEMON_LOCK_PATH.unlink(missing_ok=True)
         else:
-            click.echo("No swarm daemon is running (no lock file).")
+            click.echo("No Swarm (legacy) daemon is running (no lock file).")
         return
     if not _pid_alive(pid):
         click.echo(f"Stale lock for dead PID {pid} — cleaning up.")
@@ -1849,13 +1891,13 @@ def stop(timeout: float, force: bool) -> None:
         click.echo(f"Failed to signal PID {pid}: {e}", err=True)
         raise SystemExit(1) from e
     if force:
-        click.echo(f"Sent SIGKILL to swarm daemon (PID {pid}).")
+        click.echo(f"Sent SIGKILL to the Swarm (legacy) daemon (PID {pid}).")
         return
     # Wait for graceful shutdown, then escalate.
     deadline = _time.monotonic() + timeout
     while _time.monotonic() < deadline:
         if not _pid_alive(pid):
-            click.echo(f"Stopped swarm daemon (PID {pid}).")
+            click.echo(f"Stopped the Swarm (legacy) daemon (PID {pid}).")
             return
         _time.sleep(0.2)
     click.echo(f"PID {pid} did not exit within {timeout:.0f}s — sending SIGKILL.")
@@ -1867,7 +1909,7 @@ def stop(timeout: float, force: bool) -> None:
     if _pid_alive(pid):
         click.echo(f"Failed to stop PID {pid}.", err=True)
         raise SystemExit(1)
-    click.echo(f"Stopped swarm daemon (PID {pid}).")
+    click.echo(f"Stopped the Swarm (legacy) daemon (PID {pid}).")
 
 
 @main.command("holder-restart")
@@ -1927,7 +1969,7 @@ def holder_restart_cmd(socket_path: str | None, timeout: float) -> None:
         click.echo("Holder restarted in place — workers preserved.")
     else:
         click.echo(
-            "Holder restart did not confirm — check 'swarm status' and "
+            "Holder restart did not confirm — check 'swarm-legacy status' and "
             "the holder PID. If the existing holder predates the "
             "restart_in_place command (released 2026-05), it returns "
             "'unknown command' and worker processes are unaffected; you "
@@ -2017,7 +2059,7 @@ def _tasks_list(board: TaskBoard) -> None:
     if not all_tasks:
         click.echo(
             "No tasks on the board. (Tasks are session-scoped"
-            " -- create from the web dashboard or use 'swarm tasks create')"
+            " -- create from the web dashboard or use 'swarm-legacy tasks create')"
         )
         return
     for t in all_tasks:
@@ -2140,6 +2182,78 @@ def tunnel(config_path: str | None, port: int | None) -> None:
         pass
 
 
+def _format_bytes(size: int | None) -> str:
+    """Human-readable size, or "unknown size" when the directory was unreadable.
+
+    ``None`` is not zero: telling an operator a 99 MB hive is "0 B" invites
+    them to delete it without a thought.
+    """
+    if size is None:
+        return "unknown size"
+    value = float(size)
+    for unit in ("B", "KB", "MB", "GB"):
+        if value < 1024 or unit == "GB":
+            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} GB"
+
+
+@main.command()
+@click.option(
+    "--purge",
+    is_flag=True,
+    help="Also delete the state directory — swarm.db, every task and all history",
+)
+@click.option("-y", "--yes", is_flag=True, help="Skip the confirmation prompt")
+def uninstall(purge: bool, yes: bool) -> None:
+    """Remove this hive's service and stop it, then name the last step.
+
+    Swarm (legacy) is no longer maintained; Swarm Next replaces it.  This
+    takes the systemd unit out first — it carries ``Restart=always``, so
+    stopping the daemon while the unit is installed just makes systemd put
+    it back — then stops whatever is still running.
+
+    Your state directory is kept unless you pass ``--purge``.
+    """
+    from swarm import uninstall as un
+
+    plan_ = un.plan()
+
+    click.echo("This will:")
+    if plan_.unit_path is not None and not plan_.unit_is_ours:
+        click.echo(
+            f"  - LEAVE {plan_.unit_name} alone — that unit does not launch "
+            "Swarm (legacy), so something else owns the name now"
+        )
+    elif plan_.unit_path is not None:
+        state = "running" if plan_.unit_active else "installed"
+        click.echo(f"  - remove the systemd unit {plan_.unit_name} ({state})")
+    else:
+        click.echo(f"  - remove nothing from systemd (no {plan_.unit_name})")
+    for proc in plan_.live:
+        click.echo(f"  - stop the {proc.kind} (PID {proc.pid}) — {proc.detail}")
+    if purge:
+        size = _format_bytes(plan_.state_bytes)
+        click.echo(f"  - DELETE {plan_.state} ({size}), including swarm.db")
+    elif plan_.state_exists:
+        click.echo(f"  - keep {plan_.state} (pass --purge to delete it)")
+
+    if not yes and not click.confirm("\nProceed?", default=False):
+        click.echo("Nothing was changed.")
+        return
+
+    for step in un.perform(plan_, purge=purge):
+        click.echo(step)
+
+    click.echo(f"\nLast step — remove the package itself:\n  uv tool uninstall {un.PACKAGE}")
+    if plan_.entrypoints:
+        names = ", ".join(sorted({p.name for p in plan_.entrypoints}))
+        click.echo(f"  (that is what removes {names})")
+    if not purge and plan_.state_exists:
+        click.echo(f"\nYour hive's history is still at {plan_.state}.")
+    click.echo("\nSwarm Next: https://github.com/miopea/swarm-next")
+
+
 @main.command("install-hooks")
 @click.option("--global", "global_install", is_flag=True, help="Install hooks globally")
 @click.option("--uninstall", is_flag=True, help="Remove swarm hooks instead of installing")
@@ -2194,12 +2308,17 @@ def install_service_cmd(config_path: str | None, uninstall: bool) -> None:
 
         click.echo(f"Service installed: {path}")
         click.echo(launchd_status())
-        click.echo("\nThe swarm dashboard will now start automatically on login.")
+        click.echo("\nThe Swarm (legacy) dashboard will now start automatically on login.")
         click.echo("  Status:    launchctl list com.swarm.dashboard")
-        click.echo("  Logs:      tail -f ~/.swarm/launchd-stderr.log")
-        click.echo("  Uninstall: swarm install-service --uninstall")
+        click.echo(f"  Logs:      tail -f {state_dir() / 'launchd-stderr.log'}")
+        click.echo("  Uninstall: swarm-legacy install-service --uninstall")
     else:
-        from swarm.service import install_service, service_status, uninstall_service
+        from swarm.service import (
+            current_unit_name,
+            install_service,
+            service_status,
+            uninstall_service,
+        )
 
         if uninstall:
             removed = uninstall_service()
@@ -2217,10 +2336,11 @@ def install_service_cmd(config_path: str | None, uninstall: bool) -> None:
 
         click.echo(f"Service installed: {path}")
         click.echo(service_status())
-        click.echo("\nThe swarm dashboard will now start automatically on login.")
-        click.echo("  Status:    systemctl --user status swarm")
-        click.echo("  Logs:      journalctl --user -u swarm -f")
-        click.echo("  Uninstall: swarm install-service --uninstall")
+        click.echo("\nThe Swarm (legacy) dashboard will now start automatically on login.")
+        unit = current_unit_name()
+        click.echo(f"  Status:    systemctl --user status {unit}")
+        click.echo(f"  Logs:      journalctl --user -u {unit} -f")
+        click.echo("  Uninstall: swarm-legacy install-service --uninstall")
 
 
 async def _probe_daemon_sha(port: int, token: str) -> tuple[bool, str]:
@@ -2280,7 +2400,7 @@ async def _wait_for_daemon_sha_change(port: int, token: str, pre_sha: str, timeo
         await asyncio.sleep(0.5)
     return (
         f"Restart triggered but daemon did not return new build within {timeout:.0f}s — "
-        "check `swarm status` or the dashboard."
+        "check `swarm-legacy status` or the dashboard."
     )
 
 
@@ -2336,7 +2456,7 @@ async def _restart_running_daemon(port: int, token: str, timeout: float = 30.0) 
 def update(check_only: bool, no_restart: bool, assume_yes: bool) -> None:
     """Check for and install updates from GitHub.
 
-    If a swarm daemon is running on the local machine, it is automatically
+    If a Swarm (legacy) daemon is running on the local machine, it is automatically
     restarted after a successful install so the new code takes effect
     immediately — matching the dashboard's "Update & Restart" flow.  Pass
     ``--no-restart`` to skip the restart step.
@@ -2593,7 +2713,7 @@ def _require_migration_offline() -> None:
     pid = _read_lock_pid()
     if pid is not None and _pid_alive(pid):
         raise click.ClickException(
-            f"Swarm Legacy is running (PID {pid}). Stop it briefly with 'swarm stop' "
+            f"Swarm Legacy is running (PID {pid}). Stop it briefly with 'swarm-legacy stop' "
             "before changing migration state. Swarm Next workers are not affected."
         )
 
@@ -2657,7 +2777,7 @@ def migration_finish(
         sdb.close()
     click.echo(f"Finalized: {result.finalized_tasks} task(s) moved to Swarm Next")
     click.echo(f"Safety backup: {result.backup_path}")
-    click.echo(f"Reversible with: swarm migration reverse {result.batch_id}")
+    click.echo(f"Reversible with: swarm-legacy migration reverse {result.batch_id}")
 
 
 @migration.command("reverse")
@@ -2787,7 +2907,7 @@ def restore(backup_file: Path | None, yes: bool) -> None:
     pid = _read_lock_pid()
     if pid is not None and _pid_alive(pid):
         raise click.ClickException(
-            f"Swarm daemon is running (PID {pid}). Stop it first: swarm stop"
+            f"Swarm daemon is running (PID {pid}). Stop it first: swarm-legacy stop"
         )
 
     if backup_file is None:

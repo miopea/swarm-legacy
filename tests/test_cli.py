@@ -332,7 +332,7 @@ def test_init_falls_back_to_start_hint_with_no_service_manager(runner, monkeypat
 
     result = runner.invoke(main, ["init", "--skip-hooks", "--skip-config"])
     assert result.exit_code == 0, result.output
-    assert "swarm start all" in result.output
+    assert "swarm-legacy start all" in result.output
 
 
 def test_init_points_at_service_when_daemon_slow_to_start(runner, monkeypatch, tmp_path):
@@ -747,7 +747,7 @@ def test_stop_no_lock_file(runner, tmp_path, monkeypatch):
     monkeypatch.setattr("swarm.server.runner._DAEMON_LOCK_PATH", tmp_path / "nonexistent.lock")
     result = runner.invoke(main, ["stop"])
     assert result.exit_code == 0
-    assert "No swarm daemon is running" in result.output
+    assert "No Swarm (legacy) daemon is running" in result.output
 
 
 def test_stop_stale_lock(runner, tmp_path, monkeypatch):
@@ -782,7 +782,7 @@ def test_stop_live_daemon_graceful(runner, tmp_path, monkeypatch):
 
     result = runner.invoke(main, ["stop", "--timeout", "1"])
     assert result.exit_code == 0, result.output
-    assert "Stopped swarm daemon (PID 42)" in result.output
+    assert "Stopped the Swarm (legacy) daemon (PID 42)" in result.output
     import signal as _signal
 
     assert killed == [(42, _signal.SIGTERM)]
@@ -839,7 +839,7 @@ def test_stop_timeout_escalates_to_sigkill(runner, tmp_path, monkeypatch):
     signals_sent = [s for _, s in killed]
     assert _signal.SIGTERM in signals_sent
     assert _signal.SIGKILL in signals_sent
-    assert "Stopped swarm daemon" in result.output
+    assert "Stopped the Swarm (legacy) daemon" in result.output
 
 
 # --- install-hooks ---
@@ -1574,3 +1574,47 @@ def test_tasks_create_stores_a_real_priority_enum():
     # The consumer that would actually break on an int.
     assert len(board.available_tasks) == 4
     assert next(t.priority for t in board.available_tasks) == TaskPriority.URGENT
+
+
+class TestUnknownCommandDoesNotStartADaemon:
+    """A mistyped command must fail, not launch a hive.
+
+    ``SwarmCLI`` routes an unrecognised first argument to ``start`` as a
+    target, which is how ``swarm rcg-v6`` works.  But ``start`` accepts a
+    target it cannot resolve and simply brings up the daemon with no
+    workers, so *every* typo started one.  ``swarm-legacy uninstall``
+    reported "Another swarm daemon is already running" — the uninstall was
+    a daemon boot, competing with the daemon it was supposed to remove.
+    """
+
+    def test_unknown_command_is_rejected(self, runner, sample_config) -> None:
+        with patch("swarm.cli._load_config_db_first", return_value=sample_config):
+            result = runner.invoke(main, ["uninstall-typo"])
+
+        assert result.exit_code != 0
+        assert "No such command 'uninstall-typo'" in result.output
+
+    def test_it_suggests_a_near_miss(self, runner, sample_config) -> None:
+        with patch("swarm.cli._load_config_db_first", return_value=sample_config):
+            result = runner.invoke(main, ["uninstal"])
+
+        assert "uninstall" in result.output
+
+    def test_a_real_group_still_launches(self, runner, tmp_path) -> None:
+        """The convenience this fallback exists for must keep working."""
+        workspace = tmp_path / "api"
+        workspace.mkdir()
+        cfg = HiveConfig(
+            session_name="test",
+            workers=[WorkerConfig(name="api", path=str(workspace))],
+            groups=[GroupConfig(name="backend", workers=["api"])],
+        )
+        with (
+            patch("swarm.cli._load_config_db_first", return_value=cfg),
+            patch("swarm.server.daemon.run_daemon", new_callable=AsyncMock) as mock_run,
+            patch("webbrowser.open"),
+        ):
+            result = runner.invoke(main, ["backend", "--no-browser"])
+
+        assert result.exit_code == 0, result.output
+        assert mock_run.called

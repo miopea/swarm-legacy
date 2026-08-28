@@ -49,9 +49,24 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 class TestStateDirResolution:
-    def test_defaults_to_the_original_directory(self, home: Path) -> None:
+    def test_an_existing_pre_relocation_install_keeps_its_directory(self, home: Path) -> None:
         (home / ".swarm").mkdir()
         assert state_dir() == home / ".swarm"
+
+    def test_a_fresh_install_lands_in_the_relocated_directory(self, home: Path) -> None:
+        """Nothing on the box yet: take ``~/.swarm-legacy``, not ``~/.swarm``.
+
+        The ``swarm`` name belongs to Swarm Next now.  Falling back to
+        ``~/.swarm`` here meant a brand-new Legacy install re-occupied a name
+        it had been retired from, and then opened with the relocation banner
+        telling the operator to undo what the install had just done.
+        """
+        assert not (home / ".swarm").exists()
+        assert state_dir() == home / ".swarm-legacy"
+
+    def test_a_fresh_install_has_nothing_to_relocate(self, home: Path) -> None:
+        """The corollary: no banner, because the old name was never taken."""
+        assert rl.plan().already_done is True
 
     def test_prefers_the_relocated_directory_once_it_exists(self, home: Path) -> None:
         """A fresh ~/.swarm must not shadow the real, relocated hive.
