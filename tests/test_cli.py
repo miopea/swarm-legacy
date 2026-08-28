@@ -1618,3 +1618,27 @@ class TestUnknownCommandDoesNotStartADaemon:
 
         assert result.exit_code == 0, result.output
         assert mock_run.called
+
+
+class TestStorageStatusNamesTheRealDatabase:
+    """The "not yet created" line must name the file that WILL be created.
+
+    It hardcoded ``~/.swarm/swarm.db`` while every other path resolves through
+    ``state_dir()``.  That branch only prints when no database exists — a
+    fresh install, which is exactly the case that now lives in
+    ``~/.swarm-legacy``.  So the one moment the operator is told where their
+    hive will live, they were told a path that would never exist.
+    """
+
+    def test_it_uses_the_resolved_state_directory(self, tmp_path, monkeypatch, capsys) -> None:
+        from swarm.cli import _print_db_status
+
+        state = tmp_path / ".swarm-legacy"
+        state.mkdir()
+        monkeypatch.setenv("SWARM_STATE_DIR", str(state))
+
+        _print_db_status(None, tmp_path / "config.yaml")
+
+        out = capsys.readouterr().out
+        assert f"{state / 'swarm.db'}  (not yet created)" in out
+        assert "/.swarm/swarm.db" not in out

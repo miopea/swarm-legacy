@@ -13,7 +13,7 @@ import click
 
 from swarm.config import HiveConfig, load_config
 from swarm.logging import get_logger, setup_logging, setup_logging_from_cli
-from swarm.paths import state_dir
+from swarm.paths import state_dir, state_path_str
 
 _log = get_logger("cli")
 
@@ -36,7 +36,7 @@ def _load_cfg_from_swarm_db(config_path: str | None) -> HiveConfig:
     except Exception as exc:
         raise click.ClickException(
             f"Could not open swarm.db: {exc}\n"
-            "Check permissions on ~/.swarm/ or pass a different HOME."
+            f"Check permissions on {state_dir()}/ or pass a different HOME."
         ) from exc
 
     load_error: Exception | None = None
@@ -154,8 +154,9 @@ def _load_config_db_first(config_path: str | None) -> HiveConfig:
         if db_has_data:
             _log_cli.warning(
                 "ignoring --config %s — swarm.db has user data and is the source of truth. "
-                "If you really want to load from this YAML, wipe ~/.swarm/swarm.db first.",
+                "If you really want to load from this YAML, wipe %s first.",
                 config_path,
+                state_dir() / "swarm.db",
             )
             # Fall through to DB-first load.  Pass None so
             # ``_load_cfg_from_swarm_db`` doesn't try to set source_path
@@ -503,7 +504,11 @@ def _print_db_status(db_state: dict[str, Any] | None, yaml_path: Path) -> None:
     click.echo("  " + "─" * 60)
 
     if db_state is None:
-        click.echo(f"    Database : {Path.home() / '.swarm' / 'swarm.db'}  (not yet created)")
+        # Resolved, not assumed.  This branch prints only when there is no
+        # database yet — a fresh install, which now lives in ~/.swarm-legacy —
+        # so a hardcoded ~/.swarm named a file that would never be created, at
+        # the one moment the operator is told where their hive will live.
+        click.echo(f"    Database : {state_dir() / 'swarm.db'}  (not yet created)")
     elif "error" in db_state:
         click.echo(f"    Database : {db_state['path']}  (error reading: {db_state['error']})")
     else:
@@ -1316,7 +1321,7 @@ def _print_report_summary(path: Path) -> None:
     "db_path",
     type=click.Path(),
     default=None,
-    help="Path to swarm.db (default: ~/.swarm/swarm.db).",
+    help=f"Path to swarm.db (default: {state_path_str('swarm.db')}).",
 )
 @click.option(
     "--json",
@@ -1917,7 +1922,7 @@ def stop(timeout: float, force: bool) -> None:
     "--socket",
     "socket_path",
     default=None,
-    help="Override holder socket path (default: ~/.swarm/holder.sock)",
+    help=f"Override holder socket path (default: {state_path_str('holder.sock')})",
 )
 @click.option(
     "--timeout",
@@ -2914,7 +2919,7 @@ def restore(backup_file: Path | None, yes: bool) -> None:
         backup_file = find_latest_backup(state_dir() / "backups")
         if backup_file is None:
             raise click.ClickException(
-                "No backups found in ~/.swarm/backups/ — pass a backup file explicitly."
+                f"No backups found in {state_path_str('backups')}/ — pass a backup file explicitly."
             )
 
     if not yes:

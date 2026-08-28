@@ -56,6 +56,15 @@ Swarm (legacy) uses calendar versioning (`YYYY.M.D.patch`) — see `pyproject.to
   before it is touched, and one that does not launch this package is left
   alone and reported as left alone — never as "nothing to remove".
 
+- **"Not yet created" named a database that never would be.** The storage
+  summary printed `~/.swarm/swarm.db` from a hardcoded path while everything
+  else resolved through `state_dir()`. That branch prints only when no
+  database exists — a fresh install, the exact case that now lives in
+  `~/.swarm-legacy` — so the one moment an operator is told where their hive
+  will live, they were told the wrong place. The `--db` and `--socket`
+  defaults, the backups message and the permissions hint had the same stale
+  path baked in.
+
 - **A test guard and its control disagreed about which log to watch.**
   `conftest` resolves the production log through `state_dir()` now, but
   `test_log_isolation` still hardcoded `~/.swarm/swarm.log` — so on any
