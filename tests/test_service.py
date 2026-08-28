@@ -63,7 +63,7 @@ class TestGenerateUnit:
         with (
             patch("swarm.service._detect_source_dir", return_value=None),
             patch("swarm.service.shutil.which", return_value=None),
-            pytest.raises(FileNotFoundError, match="swarm binary not found"),
+            pytest.raises(FileNotFoundError, match="uv tool install swarm-ai"),
         ):
             generate_unit(None)
 
@@ -608,7 +608,7 @@ class TestGeneratePlist:
         with (
             patch("swarm.service._detect_source_dir", return_value=None),
             patch("swarm.service.shutil.which", return_value=None),
-            pytest.raises(FileNotFoundError, match="swarm binary not found"),
+            pytest.raises(FileNotFoundError, match="uv tool install swarm-ai"),
         ):
             generate_plist(None)
 
@@ -823,3 +823,45 @@ class TestUninstallRefusesAForeignUnit:
             assert uninstall_service() is False
 
         assert ("stop", "swarm.service") in [c.args for c in mock_ctl.call_args_list]
+
+
+class TestUnitFindsTheEntrypointThatSurvives:
+    """The unit must be built from a binary that will still be there.
+
+    ``generate_unit`` looked up ``swarm`` and only ``swarm``.  On a relocated
+    install ``perform_update`` deliberately drops that shim — it is Swarm
+    Next's name now — so a later ``install-service`` died with "swarm binary
+    not found in PATH".  That was a corner case while relocation was opt-in.
+    Now that every fresh install is relocated, it is the common path.
+    """
+
+    def test_it_prefers_swarm_legacy(self, tmp_path: Path) -> None:
+        found = {"swarm-legacy": "/home/u/.local/bin/swarm-legacy"}
+
+        with (
+            patch("swarm.service._detect_source_dir", return_value=None),
+            patch("swarm.service.shutil.which", side_effect=found.get),
+        ):
+            unit = generate_unit()
+
+        assert "ExecStart=/home/u/.local/bin/swarm-legacy serve\n" in unit
+
+    def test_it_still_accepts_a_lone_swarm(self, tmp_path: Path) -> None:
+        """An install that predates both names shipping together."""
+        found = {"swarm": "/home/u/.local/bin/swarm"}
+
+        with (
+            patch("swarm.service._detect_source_dir", return_value=None),
+            patch("swarm.service.shutil.which", side_effect=found.get),
+        ):
+            unit = generate_unit()
+
+        assert "ExecStart=/home/u/.local/bin/swarm serve\n" in unit
+
+    def test_neither_present_names_the_package_to_install(self, tmp_path: Path) -> None:
+        with (
+            patch("swarm.service._detect_source_dir", return_value=None),
+            patch("swarm.service.shutil.which", return_value=None),
+            pytest.raises(FileNotFoundError, match="uv tool install swarm-ai"),
+        ):
+            generate_unit()

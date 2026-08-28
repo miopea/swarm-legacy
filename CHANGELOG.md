@@ -56,6 +56,15 @@ Swarm (legacy) uses calendar versioning (`YYYY.M.D.patch`) — see `pyproject.to
   before it is touched, and one that does not launch this package is left
   alone and reported as left alone — never as "nothing to remove".
 
+- **The unit was built from a binary this package removes.**
+  `generate_unit()` located the entrypoint with `shutil.which("swarm")` and
+  nothing else, but a relocated install drops that shim on every update —
+  it is Swarm Next's name. So the unit named a binary that would not be
+  there, and the next `install-service` died with "swarm binary not found in
+  PATH". Rare while relocation was opt-in; the common path now that a fresh
+  install starts relocated. `swarm-legacy` is preferred, `swarm` kept as the
+  fallback for an install predating both names shipping together.
+
 - **A mistyped command started a hive.** The unknown-command fallback exists
   so `swarm-legacy rcg-v6` works, but `start` accepts a target it cannot
   resolve and brings the daemon up with no workers, so every typo launched

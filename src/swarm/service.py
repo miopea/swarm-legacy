@@ -231,6 +231,29 @@ def _build_path_parts(*binaries: str | None) -> list[str]:
     return parts
 
 
+_NO_ENTRYPOINT = (
+    "Neither 'swarm-legacy' nor 'swarm' was found in PATH. Install with: uv tool install swarm-ai"
+)
+
+
+def _entrypoint_binary() -> str | None:
+    """The console script to point a unit at — ``swarm-legacy`` for choice.
+
+    Both scripts ship together, so on a healthy install either would work
+    today.  ``swarm-legacy`` is the one that keeps working: a relocated
+    install drops the ``swarm`` shim on every update
+    (:func:`swarm.update._drop_reoccupied_entrypoint`), because that name
+    belongs to Swarm Next.  A unit built around ``swarm`` therefore names a
+    binary this package removes from under it, and the next
+    ``install-service`` failed outright with "swarm binary not found".
+
+    Rare while relocation was opt-in; the common path now that a fresh
+    install starts relocated.  ``swarm`` remains the fallback for an install
+    old enough to predate both names shipping together.
+    """
+    return shutil.which("swarm-legacy") or shutil.which("swarm")
+
+
 def generate_unit(config_path: str | None = None) -> str:
     """Generate the systemd unit file content.
 
@@ -238,7 +261,7 @@ def generate_unit(config_path: str | None = None) -> str:
     ``uv run swarm serve`` so source changes take effect on restart.
     For production installs, it uses the installed binary directly.
     """
-    swarm_bin = shutil.which("swarm")
+    swarm_bin = _entrypoint_binary()
     resolved_config = _resolve_config_path(config_path)
     source_dir = _detect_source_dir()
 
@@ -265,7 +288,7 @@ def generate_unit(config_path: str | None = None) -> str:
     else:
         # Production: use the installed binary
         if not swarm_bin:
-            msg = "swarm binary not found in PATH. Install with: uv tool install swarm-ai"
+            msg = _NO_ENTRYPOINT
             raise FileNotFoundError(msg)
 
         exec_start = swarm_bin + " serve"
@@ -441,9 +464,9 @@ def generate_plist(config_path: str | None = None) -> str:
             raise FileNotFoundError(msg)
         args = [uv_bin, "run", "swarm", "serve"]
     else:
-        swarm_bin = shutil.which("swarm")
+        swarm_bin = _entrypoint_binary()
         if not swarm_bin:
-            msg = "swarm binary not found in PATH. Install with: uv tool install swarm-ai"
+            msg = _NO_ENTRYPOINT
             raise FileNotFoundError(msg)
         args = [swarm_bin, "serve"]
 
