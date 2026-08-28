@@ -56,6 +56,13 @@ Swarm (legacy) uses calendar versioning (`YYYY.M.D.patch`) — see `pyproject.to
   before it is touched, and one that does not launch this package is left
   alone and reported as left alone — never as "nothing to remove".
 
+- **A test guard and its control disagreed about which log to watch.**
+  `conftest` resolves the production log through `state_dir()` now, but
+  `test_log_isolation` still hardcoded `~/.swarm/swarm.log` — so on any
+  machine without that directory the guard watched one file while its own
+  control attached a handler to another. It passed on a developer box with
+  the old directory and failed on CI, which is the worst way round.
+
 - **The unit was built from a binary this package removes.**
   `generate_unit()` located the entrypoint with `shutil.which("swarm")` and
   nothing else, but a relocated install drops that shim on every update —

@@ -32,11 +32,18 @@ from __future__ import annotations
 
 import logging
 import os
-from pathlib import Path
 
 import pytest
 
-_PROD_LOG = Path.home() / ".swarm" / "swarm.log"
+from swarm.paths import state_dir, state_path_str
+
+# Resolved the same way ``conftest._strip_prod_log_handlers`` resolves it, and
+# for the same reason the guard itself stopped hardcoding it: a fresh install
+# lives in ``~/.swarm-legacy``.  Hardcoded, the two disagreed on any machine
+# without a ``~/.swarm`` — the guard watched one file while this control
+# attached a handler to another, so the control failed on CI while passing on
+# a developer box that happened to have the old directory.
+_PROD_LOG = state_dir() / "swarm.log"
 
 
 def _prod_handlers() -> list[logging.Handler]:
@@ -100,7 +107,7 @@ def test_the_default_log_path_is_redirected():
     too, because this failure mode is silent."""
     import swarm.logging as _swarm_logging
 
-    assert _swarm_logging._DEFAULT_LOG_FILE != "~/.swarm/swarm.log", (
+    assert _swarm_logging._DEFAULT_LOG_FILE != state_path_str("swarm.log"), (
         "the default log path is not redirected during tests"
     )
 
